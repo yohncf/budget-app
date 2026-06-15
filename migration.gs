@@ -71,6 +71,7 @@ function syncAll() {
 }
 
 // Synchronize an individual sheet
+// Synchronize an individual sheet
 function syncSheet(sheet, sheetName, collectionId) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const range = sheet.getDataRange();
@@ -90,6 +91,7 @@ function syncSheet(sheet, sheetName, collectionId) {
 
   const records = [];
   const validCols = VALID_COLUMNS[sheetName] || [];
+  let sheetModified = false;
   
   for (let r = 1; r < values.length; r++) {
     const row = values[r];
@@ -98,8 +100,8 @@ function syncSheet(sheet, sheetName, collectionId) {
     // Generate a unique 20-char alphanumeric string if the ID is missing
     if (!recordId || String(recordId).trim() === "") {
       recordId = generateId();
-      sheet.getRange(r + 1, idColIndex + 1).setValue(recordId); // Write ID back to spreadsheet row
-      row[idColIndex] = recordId;
+      row[idColIndex] = recordId; // Update in memory
+      sheetModified = true;
     }
 
     const record = {};
@@ -147,6 +149,11 @@ function syncSheet(sheet, sheetName, collectionId) {
     records.push(record);
   }
 
+  // Write all generated IDs back to the sheet in a single batch call if modified
+  if (sheetModified) {
+    range.setValues(values);
+  }
+
   // Push to Firestore & Supabase
   syncToFirestore(collectionId, records);
   syncToSupabase(sheetName, records);
@@ -164,36 +171,43 @@ function generateId() {
   return result;
 }
 
-// Sync to Firestore REST API (using parallel requests via fetchAll)
+// Sync to Firestore REST API (using commit batch writes, max 500 writes per batch)
 function syncToFirestore(collectionId, records) {
   if (records.length === 0) return;
 
-  const requests = records.map(record => {
-    const docId = record.id;
-    const url = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/${collectionId}/${docId}?key=${FIREBASE_API_KEY}`;
+  const batchSize = 500;
+  for (let i = 0; i < records.length; i += batchSize) {
+    const chunk = records.slice(i, i + batchSize);
     
-    // Format JSON to Firestore REST values format
-    const firestoreFields = {};
-    for (const key in record) {
-      if (key !== 'id') {
-        firestoreFields[key] = toFirestoreValue(record[key], key);
+    const writes = chunk.map(record => {
+      const docId = record.id;
+      const docPath = `projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/${collectionId}/${docId}`;
+      
+      const firestoreFields = {};
+      for (const key in record) {
+        if (key !== 'id') {
+          firestoreFields[key] = toFirestoreValue(record[key], key);
+        }
       }
-    }
 
-    const payload = {
-      fields: firestoreFields
-    };
+      return {
+        update: {
+          name: docPath,
+          fields: firestoreFields
+        }
+      };
+    });
 
-    return {
-      url: url,
-      method: 'patch',
+    const url = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents:commit?key=${FIREBASE_API_KEY}`;
+    const options = {
+      method: 'post',
       contentType: 'application/json',
-      payload: JSON.stringify(payload),
+      payload: JSON.stringify({ writes: writes }),
       muteHttpExceptions: false
     };
-  });
 
-  UrlFetchApp.fetchAll(requests);
+    UrlFetchApp.fetch(url, options);
+  }
 }
 
 // Helper to convert JS values to Firestore typed values
