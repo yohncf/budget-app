@@ -38,3 +38,7 @@ Thumbs.db
 !.env.example
 secrets.json
 firebase_options.dart
+firebase-credentials.json
+
+# Prevent accidentally pushing your secret master key to public GitHub!
+**/firebase-credentials.json
