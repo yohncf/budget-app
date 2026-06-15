@@ -6,7 +6,21 @@
 const FIREBASE_PROJECT_ID = "budget-app-81120";
 const FIREBASE_API_KEY = "YOUR_FIREBASE_WEB_API_KEY"; // Replace with your Web API Key from Firebase Console Settings
 const SUPABASE_PROJECT_REF = "ubjvlwnzcyogxcwzdypd";
-const SUPABASE_ANON_KEY = "YOUR_SUPABASE_ANON_KEY";   // Replace with your Supabase Anon/Service Role Key
+const SUPABASE_ANON_KEY = "YOUR_SUPABASE_SERVICE_ROLE_KEY";   // MUST BE THE Supabase SERVICE_ROLE KEY (secret key) to bypass Row-Level Security
+
+// Valid database schema columns manifest to filter out extra sheet columns
+const VALID_COLUMNS = {
+  accounts: ['id', 'name', 'type', 'institution', 'currency', 'current_balance', 'status', 'account_group', 'created_at', 'updated_at'],
+  account_snapshots: ['id', 'account_id', 'snapshot_date', 'balance', 'currency', 'created_at'],
+  categories: ['id', 'name', 'type', 'parent_id', 'icon', 'color_hex', 'created_at'],
+  transactions: ['id', 'account_id', 'category_id', 'amount', 'currency', 'exchange_rate', 'date', 'description', 'status', 'is_recurring', 'recurring_id', 'tags', 'sheets_row_id', 'created_at'],
+  assets: ['id', 'symbol', 'name', 'type'],
+  asset_transactions: ['id', 'transaction_id', 'account_id', 'asset_id', 'type', 'quantity', 'unit_price', 'executed_at'],
+  holdings: ['id', 'account_id', 'asset_id', 'quantity', 'avg_buy_price', 'updated_at'],
+  recurring_transactions: ['id', 'account_id', 'category_id', 'amount', 'frequency', 'interval', 'start_date', 'end_date', 'next_due_date', 'status', 'description'],
+  budget_targets: ['id', 'category_id', 'target_amount', 'period', 'start_date', 'end_date', 'created_at'],
+  system_settings: ['id', 'config_key', 'config_value', 'data_type', 'description', 'updated_at']
+};
 
 // Add a custom menu to the spreadsheet on open
 function onOpen() {
@@ -20,8 +34,8 @@ function onOpen() {
 function syncAll() {
   const ui = SpreadsheetApp.getUi();
   
-  if (FIREBASE_API_KEY === "YOUR_FIREBASE_WEB_API_KEY" || SUPABASE_ANON_KEY === "YOUR_SUPABASE_ANON_KEY") {
-    ui.alert("Configuration Error", "Please configure your Firebase API Key and Supabase Anon Key at the top of the script first.", ui.ButtonSet.OK);
+  if (FIREBASE_API_KEY === "YOUR_FIREBASE_WEB_API_KEY" || SUPABASE_ANON_KEY === "YOUR_SUPABASE_ANON_KEY" || SUPABASE_ANON_KEY === "YOUR_SUPABASE_SERVICE_ROLE_KEY") {
+    ui.alert("Configuration Error", "Please configure your Firebase API Key and Supabase Service Role Key at the top of the script first.", ui.ButtonSet.OK);
     return;
   }
 
@@ -39,10 +53,16 @@ function syncAll() {
   ];
 
   let summaryMsg = "Sync Results:\n\n";
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
 
   for (const target of sheetsToSync) {
     try {
-      const result = syncSheet(target.name, target.collection);
+      const sheet = ss.getSheetByName(target.name);
+      if (!sheet) {
+        summaryMsg += `• ${target.name}: SKIPPED (Sheet not found in spreadsheet).\n`;
+        continue;
+      }
+      const result = syncSheet(sheet, target.name, target.collection);
       summaryMsg += `• ${target.name}: Synced ${result.count} records successfully.\n`;
     } catch (e) {
       summaryMsg += `• ${target.name}: FAILED - ${e.message}\n`;
@@ -53,14 +73,8 @@ function syncAll() {
 }
 
 // Synchronize an individual sheet
-function syncSheet(sheetName, collectionId) {
+function syncSheet(sheet, sheetName, collectionId) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName(sheetName);
-  
-  if (!sheet) {
-    throw new Error(`Sheet "${sheetName}" not found in the spreadsheet.`);
-  }
-
   const range = sheet.getDataRange();
   const values = range.getValues();
   
@@ -68,7 +82,8 @@ function syncSheet(sheetName, collectionId) {
     return { count: 0 }; // Only headers or empty
   }
 
-  const headers = values[0];
+  const rawHeaders = values[0];
+  const headers = rawHeaders.map(h => String(h).trim().toLowerCase());
   const idColIndex = headers.indexOf('id');
   
   if (idColIndex === -1) {
@@ -76,12 +91,13 @@ function syncSheet(sheetName, collectionId) {
   }
 
   const records = [];
+  const validCols = VALID_COLUMNS[sheetName] || [];
   
   for (let r = 1; r < values.length; r++) {
     const row = values[r];
     let recordId = row[idColIndex];
     
-    // Rule 1.1: Generate a unique 20-char alphanumeric string if the ID is missing
+    // Generate a unique 20-char alphanumeric string if the ID is missing
     if (!recordId || String(recordId).trim() === "") {
       recordId = generateId();
       sheet.getRange(r + 1, idColIndex + 1).setValue(recordId); // Write ID back to spreadsheet row
@@ -89,14 +105,21 @@ function syncSheet(sheetName, collectionId) {
     }
 
     const record = {};
-    for (let c = 0; c < headers.length; c++) {
+    for (let c = 0; c < rawHeaders.length; c++) {
+      const colName = headers[c];
+      
+      // Filter out any columns that are not in the valid schema column list
+      if (!colName || !validCols.includes(colName)) {
+        continue;
+      }
+
       let val = row[c];
       
       // Convert dates to ISO strings / date strings
       if (val instanceof Date) {
         const dateOnlyFields = ['snapshot_date', 'start_date', 'end_date', 'next_due_date'];
         const timezone = ss.getSpreadsheetTimeZone();
-        if (dateOnlyFields.includes(headers[c])) {
+        if (dateOnlyFields.includes(colName)) {
           val = Utilities.formatDate(val, timezone, "yyyy-MM-dd");
         } else {
           val = val.toISOString();
@@ -104,7 +127,7 @@ function syncSheet(sheetName, collectionId) {
       }
       
       // Parse JSON string arrays/objects if field is tags or config_value
-      if ((headers[c] === 'tags' || headers[c] === 'config_value') && typeof val === 'string' && val.startsWith('[')) {
+      if ((colName === 'tags' || colName === 'config_value') && typeof val === 'string' && val.startsWith('[')) {
         try {
           val = JSON.parse(val);
         } catch (e) {
@@ -112,13 +135,16 @@ function syncSheet(sheetName, collectionId) {
         }
       }
 
-      record[headers[c]] = val;
+      record[colName] = val;
     }
 
-    // Rule 1.1: Traceability row identifier for transaction logging
-    if (sheetName === 'transactions') {
+    // Traceability row identifier for transaction logging
+    if (sheetName === 'transactions' && validCols.includes('sheets_row_id')) {
       record['sheets_row_id'] = r + 1; // row number in Sheets (1-indexed)
     }
+
+    // Force set the correct ID
+    record['id'] = recordId;
 
     records.push(record);
   }
@@ -140,9 +166,11 @@ function generateId() {
   return result;
 }
 
-// Sync to Firestore REST API (using document PATCH for upsert)
+// Sync to Firestore REST API (using parallel requests via fetchAll)
 function syncToFirestore(collectionId, records) {
-  for (const record of records) {
+  if (records.length === 0) return;
+
+  const requests = records.map(record => {
     const docId = record.id;
     const url = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/${collectionId}/${docId}?key=${FIREBASE_API_KEY}`;
     
@@ -158,15 +186,16 @@ function syncToFirestore(collectionId, records) {
       fields: firestoreFields
     };
 
-    const options = {
+    return {
+      url: url,
       method: 'patch',
       contentType: 'application/json',
       payload: JSON.stringify(payload),
       muteHttpExceptions: false
     };
+  });
 
-    UrlFetchApp.fetch(url, options);
-  }
+  UrlFetchApp.fetchAll(requests);
 }
 
 // Helper to convert JS values to Firestore typed values
@@ -186,16 +215,21 @@ function toFirestoreValue(val, key) {
     let dateStr = '';
     if (val instanceof Date) {
       dateStr = val.toISOString();
-    } else if (typeof val === 'string') {
-      dateStr = val;
-    } else if (typeof val === 'number') {
-      dateStr = new Date(val).toISOString();
+    } else {
+      // Try to parse string or number robustly
+      const parsedDate = new Date(val);
+      if (!isNaN(parsedDate.getTime())) {
+        dateStr = parsedDate.toISOString();
+      }
     }
 
     if (dateStr) {
-      // If date-only string (e.g. YYYY-MM-DD), make it a timestamp format
-      if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
-        dateStr = dateStr + 'T00:00:00Z';
+      // Ensure date-only fields are padded to T00:00:00Z for Firestore compatibility
+      const dateOnlyFields = ['snapshot_date', 'start_date', 'end_date', 'next_due_date'];
+      if (dateOnlyFields.includes(key)) {
+        if (dateStr.includes('T')) {
+          dateStr = dateStr.split('T')[0] + 'T00:00:00Z';
+        }
       }
       return { timestampValue: dateStr };
     }
