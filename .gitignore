@@ -1,0 +1,40 @@
+# Flutter/Dart build and tool files
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+build/
+*.icon_set/
+*.jpeg
+*.png
+*.webp
+
+# Symbol files
+*.pdb
+*.dsp
+*.dsw
+*.val
+*.lh
+
+# IDEs
+.idea/
+.vscode/
+*.iml
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Operating System Files
+.DS_Store
+Thumbs.db
+
+# Secrets and environment variables
+.env
+.env.*
+!.env.example
+secrets.json
+firebase_options.dart

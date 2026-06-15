@@ -1,0 +1,239 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "project_name": "Budget App Blueprint",
+    "architecture_version": "1.2.0",
+    "target_platforms": {
+        "frontend": "Flutter (Dart)",
+        "backend": "Firebase Firestore",
+        "migration_engine": "Google Apps Script"
+    },
+    "id_generation": {
+        "mechanism": "Google Apps Script Crypto/Utilities Random Generator",
+        "length": 20,
+        "format": "alphanumeric"
+    },
+    "tables_manifest": [
+        "accounts",
+        "account_snapshots",
+        "categories",
+        "transactions",
+        "asset_transactions",
+        "holdings",
+        "recurring_transactions",
+        "budget_targets",
+        "system_settings"
+    ],
+    "definitions": {
+        "accounts": {
+            "type": "collection",
+            "fields": [
+                "id",
+                "name",
+                "type",
+                "institution",
+                "currency",
+                "current_balance",
+                "status",
+                "created_at",
+                "updated_at"
+            ],
+            "enums": {
+                "type": [
+                    "checking",
+                    "savings",
+                    "credit_card",
+                    "investment",
+                    "crypto_wallet"
+                ],
+                "status": [
+                    "active",
+                    "archived"
+                ]
+            }
+        },
+        "account_snapshots": {
+            "type": "collection",
+            "fields": [
+                "id",
+                "account_id",
+                "snapshot_date",
+                "balance",
+                "currency",
+                "created_at"
+            ]
+        },
+        "categories": {
+            "type": "collection",
+            "fields": [
+                "id",
+                "name",
+                "type",
+                "parent_id",
+                "icon",
+                "color_hex",
+                "created_at"
+            ],
+            "enums": {
+                "type": [
+                    "income",
+                    "expense",
+                    "transfer",
+                    "reinbursement",
+                    "investment"
+                ]
+            }
+        },
+        "transactions": {
+            "type": "collection",
+            "fields": [
+                "id",
+                "account_id",
+                "category_id",
+                "amount",
+                "currency",
+                "exchange_rate",
+                "date",
+                "description",
+                "status",
+                "is_recurring",
+                "recurring_id",
+                "tags",
+                "sheets_row_id",
+                "created_at"
+            ],
+            "enums": {
+                "status": [
+                    "pending",
+                    "cleared",
+                    "flagged"
+                ]
+            }
+        },
+        "asset_transactions": {
+            "type": "collection",
+            "fields": [
+                "id",
+                "transaction_id",
+                "account_id",
+                "asset_symbol",
+                "asset_name",
+                "type",
+                "quantity",
+                "unit_price",
+                "executed_at"
+            ],
+            "enums": {
+                "type": [
+                    "buy",
+                    "sell",
+                    "split",
+                    "dividend_reinvest"
+                ]
+            }
+        },
+        "holdings": {
+            "type": "collection",
+            "fields": [
+                "id",
+                "account_id",
+                "asset_id",
+                "quantity",
+                "avg_buy_price",
+                "updated_at"
+            ],
+            "enums": {
+                "type": [
+                    "buy",
+                    "sell",
+                    "split",
+                    "dividend_reinvest",
+                    "reward"
+                ]
+            }
+        },
+        "assets": {
+            "type": "collection",
+            "fields": [
+                "id",
+                "symbol",
+                "name",
+                "type"
+            ],
+            "enums": {
+                "type": [
+                    "crypto",
+                    "stock",
+                    "etf"
+                ]
+            }
+        },
+        "recurring_transactions": {
+            "type": "collection",
+            "fields": [
+                "id",
+                "account_id",
+                "category_id",
+                "amount",
+                "frequency",
+                "interval",
+                "start_date",
+                "end_date",
+                "next_due_date",
+                "status",
+                "description"
+            ],
+            "enums": {
+                "frequency": [
+                    "daily",
+                    "weekly",
+                    "biweekly",
+                    "monthly",
+                    "yearly"
+                ],
+                "status": [
+                    "active",
+                    "paused",
+                    "completed"
+                ]
+            }
+        },
+        "budget_targets": {
+            "type": "collection",
+            "fields": [
+                "id",
+                "category_id",
+                "target_amount",
+                "period",
+                "start_date",
+                "end_date",
+                "created_at"
+            ],
+            "enums": {
+                "period": [
+                    "monthly",
+                    "quarterly",
+                    "yearly"
+                ]
+            }
+        },
+        "system_settings": {
+            "type": "collection",
+            "fields": [
+                "id",
+                "config_key",
+                "config_value",
+                "data_type",
+                "description",
+                "updated_at"
+            ],
+            "enums": {
+                "data_type": [
+                    "string",
+                    "int",
+                    "boolean",
+                    "json"
+                ]
+            }
+        }
+    }
+}
