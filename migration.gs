@@ -27,6 +27,7 @@ function syncAll() {
 
   const sheetsToSync = [
     { name: 'accounts', collection: 'accounts', type: 'accounts' },
+    { name: 'account_snapshots', collection: 'account_snapshots', type: 'account_snapshots' },
     { name: 'categories', collection: 'categories', type: 'categories' },
     { name: 'transactions', collection: 'transactions', type: 'transactions' },
     { name: 'assets', collection: 'assets', type: 'assets' },
@@ -91,9 +92,15 @@ function syncSheet(sheetName, collectionId) {
     for (let c = 0; c < headers.length; c++) {
       let val = row[c];
       
-      // Convert dates to ISO strings
+      // Convert dates to ISO strings / date strings
       if (val instanceof Date) {
-        val = val.toISOString();
+        const dateOnlyFields = ['snapshot_date', 'start_date', 'end_date', 'next_due_date'];
+        const timezone = ss.getSpreadsheetTimeZone();
+        if (dateOnlyFields.includes(headers[c])) {
+          val = Utilities.formatDate(val, timezone, "yyyy-MM-dd");
+        } else {
+          val = val.toISOString();
+        }
       }
       
       // Parse JSON string arrays/objects if field is tags or config_value
@@ -143,7 +150,7 @@ function syncToFirestore(collectionId, records) {
     const firestoreFields = {};
     for (const key in record) {
       if (key !== 'id') {
-        firestoreFields[key] = toFirestoreValue(record[key]);
+        firestoreFields[key] = toFirestoreValue(record[key], key);
       }
     }
 
@@ -163,7 +170,41 @@ function syncToFirestore(collectionId, records) {
 }
 
 // Helper to convert JS values to Firestore typed values
-function toFirestoreValue(val) {
+function toFirestoreValue(val, key) {
+  const dateFields = [
+    'created_at',
+    'updated_at',
+    'snapshot_date',
+    'date',
+    'executed_at',
+    'start_date',
+    'end_date',
+    'next_due_date'
+  ];
+
+  if (key && dateFields.includes(key) && val) {
+    let dateStr = '';
+    if (val instanceof Date) {
+      dateStr = val.toISOString();
+    } else if (typeof val === 'string') {
+      dateStr = val;
+    } else if (typeof val === 'number') {
+      dateStr = new Date(val).toISOString();
+    }
+
+    if (dateStr) {
+      // If date-only string (e.g. YYYY-MM-DD), make it a timestamp format
+      if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+        dateStr = dateStr + 'T00:00:00Z';
+      }
+      return { timestampValue: dateStr };
+    }
+  }
+
+  if (val instanceof Date) {
+    return { timestampValue: val.toISOString() };
+  }
+
   if (typeof val === 'string') {
     return { stringValue: val };
   }
@@ -174,7 +215,7 @@ function toFirestoreValue(val) {
     return { booleanValue: val };
   }
   if (Array.isArray(val)) {
-    return { arrayValue: { values: val.map(toFirestoreValue) } };
+    return { arrayValue: { values: val.map(v => toFirestoreValue(v)) } };
   }
   if (val === null || val === undefined) {
     return { nullValue: null };
@@ -182,7 +223,7 @@ function toFirestoreValue(val) {
   if (typeof val === 'object') {
     const fields = {};
     for (const k in val) {
-      fields[k] = toFirestoreValue(val[k]);
+      fields[k] = toFirestoreValue(val[k], k);
     }
     return { mapValue: { fields } };
   }
@@ -197,9 +238,15 @@ function syncToSupabase(tableName, records) {
   const supabaseRecords = records.map(record => {
     const formatted = { ...record };
     
-    // Convert tags array into PG array format e.g. ["a", "b"] -> {a,b}
-    if (Array.isArray(formatted.tags)) {
-      formatted.tags = `{${formatted.tags.join(',')}}`;
+    // Convert tags to PG array format robustly
+    if (formatted.hasOwnProperty('tags')) {
+      let tagsArray = [];
+      if (Array.isArray(formatted.tags)) {
+        tagsArray = formatted.tags;
+      } else if (typeof formatted.tags === 'string' && formatted.tags.trim() !== '') {
+        tagsArray = formatted.tags.split(',').map(t => t.trim()).filter(t => t.length > 0);
+      }
+      formatted.tags = `{${tagsArray.map(t => `"${t.replace(/"/g, '\\"')}"`).join(',')}}`;
     }
     
     return formatted;

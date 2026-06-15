@@ -23,7 +23,7 @@ void main() async {
   try {
     await Supabase.initialize(
       url: 'https://ubjvlwnzcyogxcwzdypd.supabase.co',
-      anonKey: 'YOUR_SUPABASE_ANON_KEY',
+      anonKey: 'sb_publishable_6xo-YeBUV1dcgiNeJWQ31w_qx8G7IlH',
     );
   } catch (e) {
     debugPrint("Supabase initialization skipped or failed: $e");

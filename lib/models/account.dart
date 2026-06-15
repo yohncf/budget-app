@@ -5,6 +5,7 @@ class Account {
   final String? institution;
   final String currency;
   final double currentBalance;
+  final String? accountGroup; // liquid_assets, credit, capital, retirement
   final String status; // active, archived
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -16,6 +17,7 @@ class Account {
     this.institution,
     required this.currency,
     this.currentBalance = 0.0,
+    this.accountGroup,
     this.status = 'active',
     required this.createdAt,
     required this.updatedAt,
@@ -29,6 +31,7 @@ class Account {
       institution: json['institution'] as String?,
       currency: json['currency'] as String,
       currentBalance: (json['current_balance'] ?? 0.0).toDouble(),
+      accountGroup: json['account_group'] as String?,
       status: json['status'] ?? 'active',
       createdAt: json['created_at'] != null ? DateTime.parse(json['created_at']) : DateTime.now(),
       updatedAt: json['updated_at'] != null ? DateTime.parse(json['updated_at']) : DateTime.now(),
@@ -43,6 +46,7 @@ class Account {
       'institution': institution,
       'currency': currency,
       'current_balance': currentBalance,
+      'account_group': accountGroup,
       'status': status,
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
@@ -56,6 +60,7 @@ class Account {
     String? currency,
     double? currentBalance,
     String? status,
+    String? accountGroup,
     DateTime? updatedAt,
   }) {
     return Account(
@@ -66,6 +71,7 @@ class Account {
       currency: currency ?? this.currency,
       currentBalance: currentBalance ?? this.currentBalance,
       status: status ?? this.status,
+      accountGroup: accountGroup ?? this.accountGroup,
       createdAt: createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
