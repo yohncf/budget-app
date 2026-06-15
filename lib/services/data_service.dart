@@ -1,4 +1,4 @@
-import 'package:flutter/foundation.dart';
+import 'package:flutter/foundation.dart' hide Category;
 import 'firestore_service.dart';
 import 'supabase_service.dart';
 import '../models/account.dart';

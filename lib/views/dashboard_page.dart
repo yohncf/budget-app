@@ -4,6 +4,7 @@ import 'package:fl_chart/fl_chart.dart';
 import '../services/data_service.dart';
 import '../core/theme.dart';
 import '../models/account.dart';
+import '../models/category.dart';
 import 'package:intl/intl.dart';
 
 class DashboardPage extends StatelessWidget {
@@ -27,7 +28,7 @@ class DashboardPage extends StatelessWidget {
               children: [
                 // Top header bar
                 Row(
-                  mainAxisAlignment: MainAxisAlignment.between,
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -169,10 +170,14 @@ class DashboardPage extends StatelessWidget {
     final Map<String, double> categorySummaries = {};
     for (var tx in service.transactions) {
       if (tx.amount < 0) {
-        final cat = service.categories.firstWhere(
-          (c) => c.id == tx.categoryId,
-          orElse: () => Category(id: '', name: 'Miscellaneous', type: 'expense', createdAt: DateTime.now()),
-        );
+        Category? cat;
+        for (var c in service.categories) {
+          if (c.id == tx.categoryId) {
+            cat = c;
+            break;
+          }
+        }
+        cat ??= Category(id: '', name: 'Miscellaneous', type: 'expense', createdAt: DateTime.now());
         // Exclude internal transfers from charts as per Rule 2.4
         if (cat.type != 'transfer') {
           categorySummaries[cat.name] = (categorySummaries[cat.name] ?? 0) + tx.amount.abs();

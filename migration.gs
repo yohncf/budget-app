@@ -5,7 +5,7 @@
 // --- CONFIGURATION ---
 const FIREBASE_PROJECT_ID = "budget-app-81120";
 const FIREBASE_API_KEY = "YOUR_FIREBASE_WEB_API_KEY"; // Replace with your Web API Key from Firebase Console Settings
-const SUPABASE_PROJECT_REF = "zdulthbyddnpeebntllc";
+const SUPABASE_PROJECT_REF = "ubjvlwnzcyogxcwzdypd";
 const SUPABASE_ANON_KEY = "YOUR_SUPABASE_ANON_KEY";   // Replace with your Supabase Anon/Service Role Key
 
 // Add a custom menu to the spreadsheet on open

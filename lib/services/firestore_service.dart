@@ -1,4 +1,4 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_firestore/cloud_firestore.dart' hide Transaction;
 import '../models/account.dart';
 import '../models/category.dart';
 import '../models/transaction.dart';

@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../services/data_service.dart';
 import '../models/account.dart';
 import '../models/category.dart';
+import '../models/transaction.dart';
 import '../core/theme.dart';
 import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
@@ -21,7 +22,6 @@ class _AccountsPageState extends State<AccountsPage> {
   final _nameController = TextEditingController();
   final _institutionController = TextEditingController();
   String _selectedType = 'checking';
-  String _selectedGroup = 'liquid_assets';
   final _balanceController = TextEditingController();
 
   @override
@@ -48,7 +48,7 @@ class _AccountsPageState extends State<AccountsPage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
-                mainAxisAlignment: MainAxisAlignment.between,
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -112,7 +112,7 @@ class _AccountsPageState extends State<AccountsPage> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Row(
-                                    mainAxisAlignment: MainAxisAlignment.between,
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                     children: [
                                       Container(
                                         padding: const EdgeInsets.all(8),
@@ -147,7 +147,7 @@ class _AccountsPageState extends State<AccountsPage> {
                                   ),
                                   const Spacer(),
                                   Row(
-                                    mainAxisAlignment: MainAxisAlignment.between,
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                     children: [
                                       Text(
                                         currencyFormatter.format(totalVal),
@@ -183,7 +183,6 @@ class _AccountsPageState extends State<AccountsPage> {
       _institutionController.clear();
       _balanceController.clear();
       _selectedType = 'checking';
-      _selectedGroup = 'liquid_assets';
     });
 
     showDialog(
@@ -211,7 +210,6 @@ class _AccountsPageState extends State<AccountsPage> {
                       ),
                       const SizedBox(height: 16),
                       DropdownButtonFormField<String>(
-                        value: _selectedType,
                         decoration: const InputDecoration(labelText: 'Account Type'),
                         items: ['checking', 'savings', 'credit_card', 'investment', 'crypto_wallet', 'retirement'].map((t) {
                           return DropdownMenuItem(value: t, child: Text(t.toUpperCase()));
@@ -262,11 +260,14 @@ class _AccountsPageState extends State<AccountsPage> {
 
                     // Rule 2.2: Opening balance is a transaction using System Category: Opening Balance
                     if (initBalance != 0) {
-                      // Check if category exists or create it
                       Category? opCat;
-                      try {
-                        opCat = dataService.categories.firstWhere((c) => c.name == 'System: Opening Balance');
-                      } catch (e) {
+                      for (var c in dataService.categories) {
+                        if (c.name == 'System: Opening Balance') {
+                          opCat = c;
+                          break;
+                        }
+                      }
+                      if (opCat == null) {
                         opCat = Category(
                           id: 'sys_opening_balance',
                           name: 'System: Opening Balance',
@@ -289,7 +290,9 @@ class _AccountsPageState extends State<AccountsPage> {
                       await dataService.addTransaction(opTx);
                     }
 
-                    Navigator.of(context).pop();
+                    if (context.mounted) {
+                      Navigator.of(context).pop();
+                    }
                   },
                 ),
               ],

@@ -22,7 +22,7 @@ void main() async {
   // Initialize Supabase (wrapped in try-catch)
   try {
     await Supabase.initialize(
-      url: 'https://zdulthbyddnpeebntllc.supabase.co',
+      url: 'https://ubjvlwnzcyogxcwzdypd.supabase.co',
       anonKey: 'YOUR_SUPABASE_ANON_KEY',
     );
   } catch (e) {

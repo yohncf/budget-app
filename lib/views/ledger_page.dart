@@ -49,7 +49,7 @@ class _LedgerPageState extends State<LedgerPage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
-                mainAxisAlignment: MainAxisAlignment.between,
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -94,14 +94,23 @@ class _LedgerPageState extends State<LedgerPage> {
                             separatorBuilder: (context, index) => const Divider(color: Color(0xFF2E2E4A)),
                             itemBuilder: (context, index) {
                               final tx = dataService.transactions[index];
-                              final account = dataService.accounts.firstWhere(
-                                (a) => a.id == tx.accountId,
-                                orElse: () => Account(id: '', name: 'Deleted Account', type: 'checking', currency: 'USD', createdAt: DateTime.now(), updatedAt: DateTime.now()),
-                              );
-                              final category = dataService.categories.firstWhere(
-                                (c) => c.id == tx.categoryId,
-                                orElse: () => Category(id: '', name: 'Uncategorized', type: 'expense', createdAt: DateTime.now()),
-                              );
+                              Account? account;
+                              for (var a in dataService.accounts) {
+                                if (a.id == tx.accountId) {
+                                  account = a;
+                                  break;
+                                }
+                              }
+                              account ??= Account(id: '', name: 'Deleted Account', type: 'checking', currency: 'USD', createdAt: DateTime.now(), updatedAt: DateTime.now());
+
+                              Category? category;
+                              for (var c in dataService.categories) {
+                                if (c.id == tx.categoryId) {
+                                  category = c;
+                                  break;
+                                }
+                              }
+                              category ??= Category(id: '', name: 'Uncategorized', type: 'expense', createdAt: DateTime.now());
 
                               Color amountColor = Colors.white;
                               String prefix = '';
@@ -222,7 +231,7 @@ class _LedgerPageState extends State<LedgerPage> {
                       DropdownButtonFormField<String>(
                         value: _selectedAccountId,
                         decoration: const InputDecoration(labelText: 'Account'),
-                        items: dataService.accounts.map((a) {
+                        items: dataService.accounts.map<DropdownMenuItem<String>>((Account a) {
                           return DropdownMenuItem(value: a.id, child: Text(a.name));
                         }).toList(),
                         onChanged: (val) => setDialogState(() => _selectedAccountId = val),
@@ -233,7 +242,7 @@ class _LedgerPageState extends State<LedgerPage> {
                       DropdownButtonFormField<String>(
                         value: _selectedCategoryId,
                         decoration: const InputDecoration(labelText: 'Category'),
-                        items: dataService.categories.map((c) {
+                        items: dataService.categories.map<DropdownMenuItem<String>>((Category c) {
                           return DropdownMenuItem(value: c.id, child: Text('${c.name} (${c.type.toUpperCase()})'));
                         }).toList(),
                         onChanged: (val) => setDialogState(() => _selectedCategoryId = val),
@@ -260,7 +269,7 @@ class _LedgerPageState extends State<LedgerPage> {
 
                       // Date selector
                       Row(
-                        mainAxisAlignment: MainAxisAlignment.between,
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Text('Date: ${DateFormat('yyyy-MM-dd').format(_selectedDate)}'),
                           TextButton(
