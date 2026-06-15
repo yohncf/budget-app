@@ -5,6 +5,7 @@ class Account {
   final String? institution;
   final String currency;
   final double currentBalance;
+  final double limit; // credit limit or constraint check limit
   final String? accountGroup; // liquid_assets, credit, capital, retirement
   final String status; // active, archived
   final DateTime createdAt;
@@ -17,6 +18,7 @@ class Account {
     this.institution,
     required this.currency,
     this.currentBalance = 0.0,
+    this.limit = 0.0,
     this.accountGroup,
     this.status = 'active',
     required this.createdAt,
@@ -31,6 +33,7 @@ class Account {
       institution: json['institution'] as String?,
       currency: json['currency'] as String,
       currentBalance: (json['current_balance'] ?? 0.0).toDouble(),
+      limit: (json['limit'] ?? 0.0).toDouble(),
       accountGroup: json['account_group'] as String?,
       status: json['status'] ?? 'active',
       createdAt: json['created_at'] != null ? DateTime.parse(json['created_at']) : DateTime.now(),
@@ -46,6 +49,7 @@ class Account {
       'institution': institution,
       'currency': currency,
       'current_balance': currentBalance,
+      'limit': limit,
       'account_group': accountGroup,
       'status': status,
       'created_at': createdAt.toIso8601String(),
@@ -59,6 +63,7 @@ class Account {
     String? institution,
     String? currency,
     double? currentBalance,
+    double? limit,
     String? status,
     String? accountGroup,
     DateTime? updatedAt,
@@ -70,6 +75,7 @@ class Account {
       institution: institution ?? this.institution,
       currency: currency ?? this.currency,
       currentBalance: currentBalance ?? this.currentBalance,
+      limit: limit ?? this.limit,
       status: status ?? this.status,
       accountGroup: accountGroup ?? this.accountGroup,
       createdAt: createdAt,

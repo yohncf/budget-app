@@ -29,6 +29,7 @@ Tracks individual financial accounts, credit cards, and investment sweep cash co
 | `institution` | `character varying(255)` | `NOT NULL` | Bank or platform name |
 | `currency` | `character varying(5)` | `NOT NULL` | Base currency code or crypto ticker (e.g., "USD", "SOL") |
 | `current_balance`| `numeric` | `NOT NULL`, `DEFAULT 0.00` | Real-time liquid cash balance |
+| `limit` | `numeric` | `NOT NULL`, `DEFAULT 0.00` | Credit card limit or spending limit |
 | `status` | `character varying(20)` | `NOT NULL`, `DEFAULT 'active'`| Account status (`active`, `archived`) |
 | `account_group` | `character varying(50)` | `NOT NULL` | Category group (`liquid_assets`, `credit`, `capital`, `retirement`) |
 | `created_at` | `timestamp with time zone`| `NOT NULL`, `DEFAULT now()` | Record creation timestamp |
@@ -137,21 +138,7 @@ Sets period spending limits or saving floors.
 | `end_date` | `date` | `NOT NULL` | Allocation end date boundary |
 | `created_at` | `timestamp with time zone`| `DEFAULT now()` | Record creation timestamp |
 
-### 2.9 System Settings Table (`system_settings`)
-Global metadata, system configuration parameters, and constants.
-
-| Column Name | PostgreSQL Data Type | Constraints / Default | Description |
-| :--- | :--- | :--- | :--- |
-| `id` | `character varying(20)` | `PRIMARY KEY`, `NOT NULL` | Unique setting ID |
-| `config_key` | `character varying(255)` | `NOT NULL` | Unique lookup name (e.g., `base_currency`) |
-| `config_value` | `text` | `NOT NULL` | Stringified value or settings JSON block |
-| `data_type` | `character varying(50)` | `NOT NULL` | Parameter datatype (`string`, `int`, `boolean`, `json`) |
-| `description` | `text` | `NULLABLE` | Explanatory note of what the config manages |
-| `updated_at` | `timestamp with time zone`| `DEFAULT now()` | Last adjustment timestamp |
-
-* **Unique Constraint:** `system_settings_config_key_key` on (`config_key`).
-
-### 2.10 Assets Table (`assets`)
+### 2.9 Assets Table (`assets`)
 Reference list of supported assets for stock, ETF, and crypto investment holdings.
 
 | Column Name | PostgreSQL Data Type | Constraints / Default | Description |

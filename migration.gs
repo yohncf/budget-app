@@ -10,7 +10,7 @@ const SUPABASE_ANON_KEY = "YOUR_SUPABASE_SERVICE_ROLE_KEY";   // MUST BE THE Sup
 
 // Valid database schema columns manifest to filter out extra sheet columns
 const VALID_COLUMNS = {
-  accounts: ['id', 'name', 'type', 'institution', 'currency', 'current_balance', 'status', 'account_group', 'created_at', 'updated_at'],
+  accounts: ['id', 'name', 'type', 'institution', 'currency', 'current_balance', 'status', 'account_group', 'created_at', 'updated_at', 'limit'],
   account_snapshots: ['id', 'account_id', 'snapshot_date', 'balance', 'currency', 'created_at'],
   categories: ['id', 'name', 'type', 'parent_id', 'icon', 'color_hex', 'created_at'],
   transactions: ['id', 'account_id', 'category_id', 'amount', 'currency', 'exchange_rate', 'date', 'description', 'status', 'is_recurring', 'recurring_id', 'tags', 'sheets_row_id', 'created_at'],
@@ -18,8 +18,7 @@ const VALID_COLUMNS = {
   asset_transactions: ['id', 'transaction_id', 'account_id', 'asset_id', 'type', 'quantity', 'unit_price', 'executed_at'],
   holdings: ['id', 'account_id', 'asset_id', 'quantity', 'avg_buy_price', 'updated_at'],
   recurring_transactions: ['id', 'account_id', 'category_id', 'amount', 'frequency', 'interval', 'start_date', 'end_date', 'next_due_date', 'status', 'description'],
-  budget_targets: ['id', 'category_id', 'target_amount', 'period', 'start_date', 'end_date', 'created_at'],
-  system_settings: ['id', 'config_key', 'config_value', 'data_type', 'description', 'updated_at']
+  budget_targets: ['id', 'category_id', 'target_amount', 'period', 'start_date', 'end_date', 'created_at']
 };
 
 // Add a custom menu to the spreadsheet on open
@@ -48,8 +47,7 @@ function syncAll() {
     { name: 'asset_transactions', collection: 'asset_transactions', type: 'asset_transactions' },
     { name: 'holdings', collection: 'holdings', type: 'holdings' },
     { name: 'recurring_transactions', collection: 'recurring_transactions', type: 'recurring_transactions' },
-    { name: 'budget_targets', collection: 'budget_targets', type: 'budget_targets' },
-    { name: 'system_settings', collection: 'system_settings', type: 'system_settings' }
+    { name: 'budget_targets', collection: 'budget_targets', type: 'budget_targets' }
   ];
 
   let summaryMsg = "Sync Results:\n\n";

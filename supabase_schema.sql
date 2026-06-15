@@ -28,6 +28,7 @@ CREATE TABLE public."accounts" (
   "institution" character varying(255) NOT NULL,
   "currency" character varying(5) NOT NULL,
   "current_balance" numeric NOT NULL DEFAULT 0.00,
+  "limit" numeric NOT NULL DEFAULT 0.00,
   "status" character varying(20) NOT NULL DEFAULT 'active'::character varying,
   "created_at" timestamp with time zone NOT NULL DEFAULT now(),
   "updated_at" timestamp with time zone DEFAULT now(),
@@ -164,23 +165,6 @@ CREATE TABLE public."budget_targets" (
 );
 
 ALTER TABLE public."budget_targets" ENABLE ROW LEVEL SECURITY;
-
---
--- Table structure for table "system_settings"
---
-
-CREATE TABLE public."system_settings" (
-  "id" character varying(20) NOT NULL,
-  "config_key" character varying(255) NOT NULL,
-  "config_value" text NOT NULL,
-  "data_type" character varying(50) NOT NULL,
-  "description" text,
-  "updated_at" timestamp with time zone DEFAULT now(),
-  CONSTRAINT "system_settings_pkey" PRIMARY KEY ("id"),
-  CONSTRAINT "system_settings_config_key_key" UNIQUE ("config_key")
-);
-
-ALTER TABLE public."system_settings" ENABLE ROW LEVEL SECURITY;
 
 --
 -- Foreign Key Constraints
