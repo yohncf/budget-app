@@ -16,7 +16,6 @@ Ingest this context, along with `budget_app_schema_blueprint.md` and `budget_app
 
 ### 1.2 Schema Synchronization Warning
 - **Account Type Sync:** Ensure that native Dart/TypeScript definitions include the `retirement` type enum in addition to `checking`, `savings`, `credit_card`, `investment`, and `crypto_wallet`.
-- **Typo Key Preservation:** The category enum key for reimbursements is explicitly spelled as `"reinbursement"` (with an 'n') across both design files. Maintain this exact string key literal for database queries unless executing a global codebase refactor.
 
 ---
 
@@ -38,7 +37,7 @@ Every category inside the system maps explicitly to one of four types, dictating
 1. **`expense`:** Strictly Negative values ($< 0$). Used for standard outflows (e.g., Groceries, Dining Out).
 2. **`income`:** Strictly Positive values ($> 0$). Used for personal core inflows (e.g., Salary, Peer Deposits, Gifts).
 3. **`transfer`:** Paired Balancing Rows ($-\text{value}$ and $+\text{value}$). Used for moving money you own (e.g., Checking to Savings, Funding a Brokerage, Credit Card Payments).
-4. **`reinbursement`:** Strictly Positive values ($> 0$). Used for split bills, refunds, or corporate cash-backs.
+4. **`reimbursement`:** Strictly Positive values ($> 0$). Used for split bills, refunds, or corporate cash-backs.
 
 ### Rule 2.4: Credit Card Payments & Savings Isolation
 - Credit card payments and transfers to savings are **Internal Transfers**, never expenses or income.

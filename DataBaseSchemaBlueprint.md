@@ -53,7 +53,7 @@ Hierarchical categorization for tracking expenses, income, and transfers.
 | :--- | :--- | :--- | :--- |
 | `id` | String | PK, 20-char Alphanumeric | Unique identifier |
 | `name` | String | Required, Non-empty | Category name (e.g., "Groceries", "Retirement PPR") |
-| `type` | String | Enum | `income`, `expense`, `transfer`, `reinbursement`, `investment` |
+| `type` | String | Enum | `income`, `expense`, `transfer`, `reimbursement`, `investment` |
 | `parent_id` | String | FK (`categories.id`), Nullable | Enables subcategories (e.g., "Dining Out" under "Food") |
 | `icon` | String | Optional | Vector icon glyph name identifier for Flutter frontend |
 | `color_hex` | String | 7-char Hex (`#RRGGBB`) | Visual identifier color code for UI charts |
