@@ -1,5 +1,5 @@
 -- Supabase Database Schema Dump
--- Generated on: 2026-06-15T21:54:22.016Z
+-- Generated on: 2026-06-16T00:07:06.916Z
 
 --
 -- Table structure for table "account_snapshots"
@@ -28,11 +28,11 @@ CREATE TABLE public."accounts" (
   "institution" character varying(255) NOT NULL,
   "currency" character varying(5) NOT NULL,
   "current_balance" numeric NOT NULL DEFAULT 0.00,
-  "limit" numeric NOT NULL DEFAULT 0.00,
   "status" character varying(20) NOT NULL DEFAULT 'active'::character varying,
   "created_at" timestamp with time zone NOT NULL DEFAULT now(),
   "updated_at" timestamp with time zone DEFAULT now(),
   "account_group" character varying(50) NOT NULL,
+  "limit" numeric NOT NULL DEFAULT 0.00,
   CONSTRAINT "accounts_pkey" PRIMARY KEY ("id")
 );
 
