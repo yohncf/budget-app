@@ -10,10 +10,20 @@ function loadEnv() {
     for (const line of content.split(/\r?\n/)) {
       const trimmed = line.trim();
       if (trimmed && !trimmed.startsWith('#')) {
-        const parts = trimmed.split('=');
-        if (parts.length >= 2) {
-          const key = parts[0].trim();
-          const val = parts.slice(1).join('=').trim().replace(/^['"]|['"]$/g, '');
+        const match = trimmed.match(/^\s*([\w.-]+)\s*=\s*(.*)?\s*$/);
+        if (match) {
+          const key = match[1];
+          let val = match[2] ? match[2].trim() : '';
+          if (val.startsWith('"') && val.endsWith('"')) {
+            val = val.substring(1, val.length - 1).replace(/\\n/g, '\n');
+          } else if (val.startsWith("'") && val.endsWith("'")) {
+            val = val.substring(1, val.length - 1);
+          } else {
+            const commentIndex = val.indexOf('#');
+            if (commentIndex !== -1) {
+              val = val.substring(0, commentIndex).trim();
+            }
+          }
           process.env[key] = val;
         }
       }
