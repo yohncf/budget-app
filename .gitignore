@@ -42,3 +42,10 @@ firebase-credentials.json
 
 # Prevent accidentally pushing your secret master key to public GitHub!
 **/firebase-credentials.json
+
+# Node modules and agent/tool directories
+node_modules/
+.gemini/
+.agents/
+skills-lock.json
+
