@@ -195,15 +195,16 @@ class _LedgerPageState extends State<LedgerPage> {
   }
 
   void _showAddTransactionDialog(BuildContext context, DataService dataService) {
-    if (dataService.accounts.isEmpty || dataService.categories.isEmpty) {
+    final activeAccounts = dataService.accounts.where((a) => a.status == 'active').toList();
+    if (activeAccounts.isEmpty || dataService.categories.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please register at least one account and category first.')),
+        const SnackBar(content: Text('Please register at least one active account and category first.')),
       );
       return;
     }
 
     setState(() {
-      _selectedAccountId = dataService.accounts.first.id;
+      _selectedAccountId = activeAccounts.first.id;
       _selectedCategoryId = dataService.categories.first.id;
       _amountController.clear();
       _descriptionController.clear();
@@ -231,7 +232,7 @@ class _LedgerPageState extends State<LedgerPage> {
                       DropdownButtonFormField<String>(
                         value: _selectedAccountId,
                         decoration: const InputDecoration(labelText: 'Account'),
-                        items: dataService.accounts.map<DropdownMenuItem<String>>((Account a) {
+                        items: activeAccounts.map<DropdownMenuItem<String>>((Account a) {
                           return DropdownMenuItem(value: a.id, child: Text(a.name));
                         }).toList(),
                         onChanged: (val) => setDialogState(() => _selectedAccountId = val),

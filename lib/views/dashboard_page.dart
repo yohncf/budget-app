@@ -302,24 +302,29 @@ class DashboardPage extends StatelessWidget {
               style: Theme.of(context).textTheme.titleLarge,
             ),
             const SizedBox(height: 16),
-            if (service.accounts.isEmpty)
-              const Center(
-                child: Padding(
-                  padding: EdgeInsets.symmetric(vertical: 40.0),
-                  child: Text('No accounts registered.'),
-                ),
-              )
-            else
-              ListView.separated(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: service.accounts.length,
-                separatorBuilder: (context, index) => const Divider(color: Color(0xFF2E2E4A)),
-                itemBuilder: (context, index) {
-                  final account = service.accounts[index];
-                  return _buildAccountRow(context, account, service, formatter);
-                },
-              ),
+            Builder(
+              builder: (context) {
+                final activeAccounts = service.accounts.where((a) => a.status == 'active').toList();
+                if (activeAccounts.isEmpty) {
+                  return const Center(
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(vertical: 40.0),
+                      child: Text('No active accounts registered.'),
+                    ),
+                  );
+                }
+                return ListView.separated(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: activeAccounts.length,
+                  separatorBuilder: (context, index) => const Divider(color: Color(0xFF2E2E4A)),
+                  itemBuilder: (context, index) {
+                    final account = activeAccounts[index];
+                    return _buildAccountRow(context, account, service, formatter);
+                  },
+                );
+              },
+            ),
           ],
         ),
       ),
