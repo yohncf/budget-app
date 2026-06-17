@@ -30,7 +30,7 @@ class _LoginPageState extends State<LoginPage> {
       // Force account selection screen
       googleProvider.setCustomParameters({'prompt': 'select_account'});
       
-      await FirebaseAuth.instance.signInWithPopup(googleProvider);
+      await FirebaseAuth.instance.signInWithProvider(googleProvider);
     } on FirebaseAuthException catch (e) {
       setState(() {
         _errorMessage = e.message ?? "Authentication failed.";
