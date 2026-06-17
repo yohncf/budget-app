@@ -1,3 +1,5 @@
+import '../core/utils.dart';
+
 class Category {
   final String id;
   final String name;
@@ -25,7 +27,7 @@ class Category {
       parentId: json['parent_id'] as String?,
       icon: json['icon'] as String?,
       colorHex: json['color_hex'] ?? '#8B5CF6',
-      createdAt: json['created_at'] != null ? DateTime.parse(json['created_at']) : DateTime.now(),
+      createdAt: parseDateTime(json['created_at']),
     );
   }
 

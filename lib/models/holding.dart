@@ -1,3 +1,5 @@
+import '../core/utils.dart';
+
 class Holding {
   final String id;
   final String accountId;
@@ -28,7 +30,7 @@ class Holding {
       assetId: json['asset_id'] as String,
       quantity: (json['quantity'] ?? 0.0).toDouble(),
       avgBuyPrice: (json['avg_buy_price'] ?? 0.0).toDouble(),
-      updatedAt: json['updated_at'] != null ? DateTime.parse(json['updated_at']) : DateTime.now(),
+      updatedAt: parseDateTime(json['updated_at']),
       assetSymbol: json['asset_symbol'] as String?,
       assetName: json['asset_name'] as String?,
     );

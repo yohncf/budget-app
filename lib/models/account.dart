@@ -1,3 +1,5 @@
+import '../core/utils.dart';
+
 class Account {
   final String id;
   final String name;
@@ -36,8 +38,8 @@ class Account {
       limit: (json['limit'] ?? 0.0).toDouble(),
       accountGroup: json['account_group'] as String?,
       status: json['status'] ?? 'active',
-      createdAt: json['created_at'] != null ? DateTime.parse(json['created_at']) : DateTime.now(),
-      updatedAt: json['updated_at'] != null ? DateTime.parse(json['updated_at']) : DateTime.now(),
+      createdAt: parseDateTime(json['created_at']),
+      updatedAt: parseDateTime(json['updated_at']),
     );
   }
 

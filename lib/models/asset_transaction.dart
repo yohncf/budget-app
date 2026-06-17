@@ -1,3 +1,5 @@
+import '../core/utils.dart';
+
 class AssetTransaction {
   final String id;
   final String? transactionId; // Links to cash ledger transaction
@@ -34,7 +36,7 @@ class AssetTransaction {
       type: json['type'] as String,
       quantity: (json['quantity'] ?? 0.0).toDouble(),
       unitPrice: (json['unit_price'] ?? 0.0).toDouble(),
-      executedAt: json['executed_at'] != null ? DateTime.parse(json['executed_at']) : DateTime.now(),
+      executedAt: parseDateTime(json['executed_at']),
       assetSymbol: json['asset_symbol'] as String?,
       assetName: json['asset_name'] as String?,
     );

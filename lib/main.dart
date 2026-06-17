@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' hide Category;
 import 'package:provider/provider.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' hide User;
 import 'services/data_service.dart';
 import 'core/theme.dart';
 import 'views/dashboard_page.dart';
 import 'views/ledger_page.dart';
 import 'views/accounts_page.dart';
+import 'views/login_page.dart';
 import 'models/category.dart';
 
 void main() async {
@@ -14,7 +17,19 @@ void main() async {
 
   // Initialize Firebase (wrapped in try-catch to allow running locally without configurations)
   try {
-    await Firebase.initializeApp();
+    await Firebase.initializeApp(
+      options: kIsWeb
+          ? const FirebaseOptions(
+              apiKey: 'AIzaSyDyPMN1YCO6k0y3m13k9JR_fWF7mjpSIUk',
+              appId: '1:1006598018185:web:2d8a37bccfe4299fc92258',
+              messagingSenderId: '1006598018185',
+              projectId: 'budget-app-81120',
+              authDomain: 'budget-app-81120.firebaseapp.com',
+              storageBucket: 'budget-app-81120.firebasestorage.app',
+              measurementId: 'G-968QW5D1Q7',
+            )
+          : null,
+    );
   } catch (e) {
     debugPrint("Firebase initialization skipped or failed: $e");
   }
@@ -43,7 +58,23 @@ class BudgetApp extends StatelessWidget {
         title: 'Budget App Ledger',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.darkTheme,
-        home: const MainLayout(),
+        home: StreamBuilder<User?>(
+          stream: FirebaseAuth.instance.authStateChanges(),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Scaffold(
+                body: Center(
+                  child: CircularProgressIndicator(),
+                ),
+              );
+            }
+            final user = snapshot.data;
+            if (user != null && user.email == 'yohncf@gmail.com') {
+              return const MainLayout();
+            }
+            return LoginPage(currentUser: user);
+          },
+        ),
       ),
     );
   }

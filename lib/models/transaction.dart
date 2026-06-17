@@ -1,3 +1,5 @@
+import '../core/utils.dart';
+
 class Transaction {
   final String id;
   final String accountId;
@@ -52,14 +54,14 @@ class Transaction {
       amount: (json['amount'] ?? 0.0).toDouble(),
       currency: json['currency'] as String,
       exchangeRate: (json['exchange_rate'] ?? 1.0).toDouble(),
-      date: json['date'] != null ? DateTime.parse(json['date']) : DateTime.now(),
+      date: parseDateTime(json['date']),
       description: json['description'] as String?,
       status: json['status'] ?? 'cleared',
       isRecurring: json['is_recurring'] ?? false,
       recurringId: json['recurring_id'] as String?,
       tags: tagsList,
       sheetsRowId: json['sheets_row_id'] as int?,
-      createdAt: json['created_at'] != null ? DateTime.parse(json['created_at']) : DateTime.now(),
+      createdAt: parseDateTime(json['created_at']),
     );
   }
 
