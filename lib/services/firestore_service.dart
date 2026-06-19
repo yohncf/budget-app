@@ -4,6 +4,7 @@ import '../models/category.dart';
 import '../models/transaction.dart';
 import '../models/holding.dart';
 import '../models/asset_transaction.dart';
+import '../models/account_snapshot.dart';
 
 class FirestoreService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
@@ -43,10 +44,14 @@ class FirestoreService {
   }
 
   // --- TRANSACTIONS ---
-  Stream<List<Transaction>> streamTransactions() {
-    return _db.collection('transactions').orderBy('date', descending: true).snapshots().map((snapshot) {
+  Stream<List<Transaction>> streamTransactions({DateTime? startFrom}) {
+    Query query = _db.collection('transactions').orderBy('date', descending: true);
+    if (startFrom != null) {
+      query = query.where('date', isGreaterThanOrEqualTo: startFrom);
+    }
+    return query.snapshots().map((snapshot) {
       return snapshot.docs.map((doc) {
-        final data = doc.data();
+        final data = doc.data() as Map<String, dynamic>;
         data['id'] = doc.id;
         return Transaction.fromJson(data);
       }).toList();
@@ -91,4 +96,133 @@ class FirestoreService {
   Future<void> saveAssetTransaction(AssetTransaction tx) async {
     await _db.collection('asset_transactions').doc(tx.id).set(tx.toJson());
   }
+
+  // --- EXCHANGE RATES ---
+  Future<Map<String, dynamic>?> getExchangeRateConfig() async {
+    try {
+      final doc = await _db.collection('config').doc('currency_rates').get();
+      return doc.data();
+    } catch (e) {
+      return null;
+    }
+  }
+
+  Future<void> saveExchangeRateConfig(Map<String, dynamic> data) async {
+    await _db.collection('config').doc('currency_rates').set(data);
+  }
+
+  // --- DATABASE DATE TYPE MIGRATION ---
+  Future<void> migrateDatabaseDates() async {
+    try {
+      final collectionsToMigrate = {
+        'transactions': ['date', 'created_at'],
+        'accounts': ['created_at', 'updated_at'],
+        'categories': ['created_at'],
+        'holdings': ['updated_at'],
+        'asset_transactions': ['executed_at'],
+        'account_snapshots': ['created_at'],
+      };
+
+      for (var entry in collectionsToMigrate.entries) {
+        final collectionName = entry.key;
+        final dateFields = entry.value;
+
+        final snapshot = await _db.collection(collectionName).get();
+        final batch = _db.batch();
+        bool hasUpdates = false;
+
+        for (var doc in snapshot.docs) {
+          final data = doc.data();
+          final Map<String, dynamic> updates = {};
+
+          for (var field in dateFields) {
+            final val = data[field];
+            if (val is String) {
+              try {
+                updates[field] = DateTime.parse(val);
+              } catch (_) {}
+            }
+          }
+
+          if (updates.isNotEmpty) {
+            batch.update(doc.reference, updates);
+            hasUpdates = true;
+          }
+        }
+
+        if (hasUpdates) {
+          await batch.commit();
+          // Use print or debugPrint here
+        }
+      }
+    } catch (e) {
+      // Ignore migration errors in production
+    }
+  }
+
+  // --- DATABASE BACKUP STATE & CONVERSION ---
+  Future<Map<String, dynamic>?> getBackupState() async {
+    try {
+      final doc = await _db.collection('config').doc('backup_state').get();
+      return doc.data();
+    } catch (e) {
+      return null;
+    }
+  }
+
+  Future<void> saveBackupState(Map<String, dynamic> data) async {
+    await _db.collection('config').doc('backup_state').set(data);
+  }
+
+  Future<List<Map<String, dynamic>>> getBackupCollection(String collectionId) async {
+    final snapshot = await _db.collection(collectionId).get();
+    return snapshot.docs.map((doc) {
+      final data = doc.data();
+      data['id'] = doc.id;
+      return _formatForSupabase(data);
+    }).toList();
+  }
+
+  Map<String, dynamic> _formatForSupabase(Map<String, dynamic> record) {
+    final formatted = <String, dynamic>{};
+    record.forEach((key, value) {
+      if (value is Timestamp) {
+        final date = value.toDate();
+        if (key == 'snapshot_date' || key == 'start_date' || key == 'end_date' || key == 'next_due_date') {
+          formatted[key] = date.toIso8601String().split('T')[0];
+        } else {
+          formatted[key] = date.toUtc().toIso8601String();
+        }
+      } else if (value is DateTime) {
+        if (key == 'snapshot_date' || key == 'start_date' || key == 'end_date' || key == 'next_due_date') {
+          formatted[key] = value.toIso8601String().split('T')[0];
+        } else {
+          formatted[key] = value.toUtc().toIso8601String();
+        }
+      } else if (key == 'tags' && value is List) {
+        formatted[key] = List<String>.from(value);
+      } else if (value is num) {
+        formatted[key] = value.toDouble();
+      } else {
+        formatted[key] = value;
+      }
+    });
+    return formatted;
+  }
+
+  // --- ACCOUNT SNAPSHOTS ---
+  Stream<List<AccountSnapshot>> streamAccountSnapshots() {
+    return _db.collection('account_snapshots').orderBy('snapshot_date', descending: true).snapshots().map((snapshot) {
+      return snapshot.docs.map((doc) {
+        final data = doc.data();
+        data['id'] = doc.id;
+        return AccountSnapshot.fromJson(data);
+      }).toList();
+    });
+  }
+
+  Future<void> saveAccountSnapshot(AccountSnapshot snapshot) async {
+    await _db.collection('account_snapshots').doc(snapshot.id).set(snapshot.toJson());
+  }
 }
+

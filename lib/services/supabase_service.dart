@@ -4,6 +4,7 @@ import '../models/category.dart';
 import '../models/transaction.dart';
 import '../models/holding.dart';
 import '../models/asset_transaction.dart';
+import '../models/account_snapshot.dart';
 
 class SupabaseService {
   final SupabaseClient _client = Supabase.instance.client;
@@ -44,7 +45,7 @@ class SupabaseService {
   }
 
   Future<void> deleteTransaction(String txId) async {
-    await _client.from('transactions').delete().eq('id', txId);
+    await _client.from('transactions').update({'status': 'deleted'}).eq('id', txId);
   }
 
   // --- HOLDINGS ---
@@ -65,5 +66,10 @@ class SupabaseService {
 
   Future<void> saveAssetTransaction(AssetTransaction tx) async {
     await _client.from('asset_transactions').upsert(tx.toJson());
+  }
+
+  // --- ACCOUNT SNAPSHOTS ---
+  Future<void> saveAccountSnapshot(AccountSnapshot snapshot) async {
+    await _client.from('account_snapshots').upsert(snapshot.toJson());
   }
 }

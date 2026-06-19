@@ -39,13 +39,11 @@ const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 if (!fs.existsSync(firebaseCredsPath)) {
   console.error('\x1b[31mError: firebase-credentials.json not found in the root directory.\x1b[0m');
-  console.log('Please make sure you have the file in place.');
   process.exit(1);
 }
 
 if (!SUPABASE_SERVICE_ROLE_KEY || SUPABASE_SERVICE_ROLE_KEY.startsWith('YOUR_')) {
-  console.error('\x1b[31mError: SUPABASE_SERVICE_ROLE_KEY is not configured or is using placeholder.\x1b[0m');
-  console.log('Please copy .env.example to .env and configure your secret service_role key.');
+  console.error('\x1b[31mError: SUPABASE_SERVICE_ROLE_KEY is not configured.\x1b[0m');
   process.exit(1);
 }
 
@@ -88,152 +86,128 @@ async function getFirestoreAccessToken(creds) {
   return data.access_token;
 }
 
-// 3. Supabase pagination fetcher
-async function fetchAllFromSupabase(table, projectRef, serviceRoleKey) {
+// 3. Convert Firestore value types back to clean JS types
+function fromFirestoreValue(field) {
+  if (!field) return null;
+  if ('stringValue' in field) return field.stringValue;
+  if ('doubleValue' in field) return Number(field.doubleValue);
+  if ('integerValue' in field) return Number(field.integerValue);
+  if ('booleanValue' in field) return field.booleanValue;
+  if ('timestampValue' in field) return field.timestampValue;
+  if ('arrayValue' in field) {
+    const values = field.arrayValue.values || [];
+    return values.map(v => fromFirestoreValue(v));
+  }
+  if ('mapValue' in field) {
+    const fields = field.mapValue.fields || {};
+    const obj = {};
+    for (const key in fields) {
+      obj[key] = fromFirestoreValue(fields[key]);
+    }
+    return obj;
+  }
+  if ('nullValue' in field) return null;
+  return null;
+}
+
+// 4. Fetch all documents paginated from Firestore
+async function fetchAllFromFirestore(collectionId, projectId, accessToken) {
   let allRecords = [];
-  let offset = 0;
-  const limit = 1000;
+  let pageToken = '';
 
   while (true) {
-    const url = `https://${projectRef}.supabase.co/rest/v1/${table}?select=*`;
+    let url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/${collectionId}?pageSize=100`;
+    if (pageToken) {
+      url += `&pageToken=${pageToken}`;
+    }
+
     const response = await fetch(url, {
       method: 'GET',
       headers: {
-        'apikey': serviceRoleKey,
-        'Authorization': `Bearer ${serviceRoleKey}`,
-        'Range': `${offset}-${offset + limit - 1}`
+        'Authorization': `Bearer ${accessToken}`
       }
     });
 
     if (!response.ok) {
+      if (response.status === 404) {
+        return [];
+      }
       const errText = await response.text();
-      throw new Error(`Failed to fetch ${table} from Supabase: ${response.status} - ${errText}`);
+      throw new Error(`Failed to fetch ${collectionId} from Firestore: ${response.status} - ${errText}`);
     }
 
     const data = await response.json();
-    if (!Array.isArray(data) || data.length === 0) {
-      break;
+    const documents = data.documents || [];
+
+    for (const doc of documents) {
+      const docId = doc.name.split('/').pop();
+      const record = { id: docId };
+      for (const key in doc.fields) {
+        record[key] = fromFirestoreValue(doc.fields[key]);
+      }
+      allRecords.push(record);
     }
 
-    allRecords = allRecords.concat(data);
-    if (data.length < limit) {
+    if (data.nextPageToken) {
+      pageToken = data.nextPageToken;
+    } else {
       break;
     }
-    offset += limit;
   }
+
   return allRecords;
 }
 
-// 4. DataType conversion for Firestore
-function toFirestoreValue(val, key) {
-  const dateFields = [
-    'created_at',
-    'updated_at',
-    'snapshot_date',
-    'date',
-    'executed_at',
-    'start_date',
-    'end_date',
-    'next_due_date'
-  ];
-
-  if (key && dateFields.includes(key) && val) {
-    let dateStr = '';
-    if (val instanceof Date) {
-      dateStr = val.toISOString();
-    } else {
-      const parsedDate = new Date(val);
-      if (!isNaN(parsedDate.getTime())) {
-        dateStr = parsedDate.toISOString();
-      }
-    }
-
-    if (dateStr) {
-      const dateOnlyFields = ['snapshot_date', 'start_date', 'end_date', 'next_due_date'];
-      if (dateOnlyFields.includes(key)) {
-        if (dateStr.includes('T')) {
-          dateStr = dateStr.split('T')[0] + 'T00:00:00Z';
-        }
-      }
-      return { timestampValue: dateStr };
-    }
-  }
-
-  if (val instanceof Date) {
-    return { timestampValue: val.toISOString() };
-  }
-  if (typeof val === 'string') {
-    return { stringValue: val };
-  }
-  if (typeof val === 'number') {
-    return { doubleValue: val };
-  }
-  if (typeof val === 'boolean') {
-    return { booleanValue: val };
-  }
-  if (Array.isArray(val)) {
-    return { arrayValue: { values: val.map(v => toFirestoreValue(v)) } };
-  }
-  if (val === null || val === undefined) {
-    return { nullValue: null };
-  }
-  if (typeof val === 'object') {
-    const fields = {};
-    for (const k in val) {
-      fields[k] = toFirestoreValue(val[k], k);
-    }
-    return { mapValue: { fields } };
-  }
-  return { stringValue: String(val) };
-}
-
-// 5. Firestore batch writer
-async function writeToFirestore(collectionId, records, projectId, accessToken) {
+// 5. Sync records to Supabase REST API (Upsert)
+async function writeToSupabase(tableName, records, projectRef, serviceRoleKey) {
   if (records.length === 0) return;
 
-  const batchSize = 500;
-  for (let i = 0; i < records.length; i += batchSize) {
-    const chunk = records.slice(i, i + batchSize);
+  const url = `https://${projectRef}.supabase.co/rest/v1/${tableName}`;
 
-    const writes = chunk.map(record => {
-      const docId = record.id;
-      const docPath = `projects/${projectId}/databases/(default)/documents/${collectionId}/${docId}`;
+  const floatFields = ['current_balance', 'limit', 'balance', 'amount', 'exchange_rate', 'quantity', 'unit_price', 'avg_buy_price', 'target_amount'];
+  const supabaseRecords = records.map(record => {
+    const formatted = { ...record };
 
-      const firestoreFields = {};
-      for (const key in record) {
-        if (key !== 'id') {
-          firestoreFields[key] = toFirestoreValue(record[key], key);
-        }
+    for (const key in formatted) {
+      if (floatFields.includes(key) && formatted[key] !== null && formatted[key] !== undefined) {
+        formatted[key] = parseFloat(formatted[key]);
       }
-
-      return {
-        update: {
-          name: docPath,
-          fields: firestoreFields
-        }
-      };
-    });
-
-    const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:commit`;
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ writes: writes })
-    });
-
-    if (!response.ok) {
-      const errText = await response.text();
-      throw new Error(`Failed to commit batch to Firestore for ${collectionId}: ${response.status} - ${errText}`);
     }
+
+    if (formatted.hasOwnProperty('tags')) {
+      let tagsArray = [];
+      if (Array.isArray(formatted.tags)) {
+        tagsArray = formatted.tags;
+      } else if (typeof formatted.tags === 'string' && formatted.tags.trim() !== '') {
+        tagsArray = formatted.tags.split(',').map(t => t.trim()).filter(t => t.length > 0);
+      }
+      formatted.tags = `{${tagsArray.map(t => `"${t.replace(/"/g, '\\"')}"`).join(',')}}`;
+    }
+
+    return formatted;
+  });
+
+  const options = {
+    method: 'POST',
+    headers: {
+      'apikey': serviceRoleKey,
+      'Authorization': `Bearer ${serviceRoleKey}`,
+      'Prefer': 'resolution=merge-duplicates',
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(supabaseRecords)
+  };
+
+  const response = await fetch(url, options);
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`Failed to write to Supabase for ${tableName}: ${response.status} - ${errText}`);
   }
 }
 
-// 6. Main Orchestrator
+// 6. Main Sync Orchestrator
 async function sync() {
-  console.log('Starting Supabase-to-Firebase database replication...\n');
+  console.log('Starting Firestore-to-Supabase database replication...\n');
 
   try {
     console.log('1. Authenticating to Firebase Firestore...');
@@ -256,23 +230,23 @@ async function sync() {
     if (args.length > 0) {
       tablesToSync = tablesToSync.filter(t => args.includes(t));
       if (tablesToSync.length === 0) {
-        console.log('\x1b[31mError: No valid tables specified. Valid tables are: accounts, account_snapshots, categories, transactions, assets, asset_transactions, holdings, recurring_transactions, budget_targets\x1b[0m');
+        console.log('\x1b[31mError: No valid tables specified.\x1b[0m');
         process.exit(1);
       }
     }
 
-    console.log('2. Syncing tables from Supabase...');
+    console.log('2. Syncing tables from Firestore...');
     for (const table of tablesToSync) {
       process.stdout.write(`   • Syncing table "${table}"... `);
       try {
-        const records = await fetchAllFromSupabase(table, SUPABASE_PROJECT_REF, SUPABASE_SERVICE_ROLE_KEY);
-        
+        const records = await fetchAllFromFirestore(table, FIREBASE_PROJECT_ID, accessToken);
+
         if (records.length === 0) {
           console.log('\x1b[33m0 records found.\x1b[0m');
           continue;
         }
 
-        await writeToFirestore(table, records, FIREBASE_PROJECT_ID, accessToken);
+        await writeToSupabase(table, records, SUPABASE_PROJECT_REF, SUPABASE_SERVICE_ROLE_KEY);
         console.log(`\x1b[32mCompleted (${records.length} records).\x1b[0m`);
       } catch (err) {
         console.log(`\x1b[31mFailed\x1b[0m`);

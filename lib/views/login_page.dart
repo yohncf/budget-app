@@ -160,10 +160,18 @@ class _LoginPageState extends State<LoginPage> {
                               )
                             ],
                           ),
-                          child: const Icon(
-                            Icons.account_balance_wallet,
-                            size: 40,
-                            color: Colors.white,
+                          child: Padding(
+                            padding: const EdgeInsets.all(16.0),
+                            child: Image.asset(
+                              'assets/images/app_logo.png',
+                              width: 48,
+                              height: 48,
+                              errorBuilder: (context, error, stackTrace) => const Icon(
+                                Icons.analytics,
+                                size: 40,
+                                color: Colors.white,
+                              ),
+                            ),
                           ),
                         ),
                         const SizedBox(height: 28),
@@ -271,25 +279,29 @@ class _LoginPageState extends State<LoginPage> {
                       valueColor: AlwaysStoppedAnimation<Color>(Colors.black54),
                     ),
                   )
-                : Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      // Google Logo G
-                      Image.network(
-                        'https://img.icons8.com/color/48/000000/google-logo.png',
-                        height: 24,
-                        width: 24,
-                      ),
-                      const SizedBox(width: 16),
-                      Text(
-                        'Sign in with Google',
-                        style: GoogleFonts.inter(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: 0.25,
+                : FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        // Google Logo G
+                        Image.network(
+                          'https://img.icons8.com/color/48/000000/google-logo.png',
+                          height: 24,
+                          width: 24,
+                          errorBuilder: (context, error, stackTrace) => const Icon(Icons.g_mobiledata, size: 24, color: Colors.black54),
                         ),
-                      ),
-                    ],
+                        const SizedBox(width: 16),
+                        Text(
+                          'Sign in with Google',
+                          style: GoogleFonts.inter(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: 0.25,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
           ),
         ),

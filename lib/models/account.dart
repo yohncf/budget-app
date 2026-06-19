@@ -54,8 +54,8 @@ class Account {
       'limit': limit,
       'account_group': accountGroup,
       'status': status,
-      'created_at': createdAt.toIso8601String(),
-      'updated_at': updatedAt.toIso8601String(),
+      'created_at': createdAt,
+      'updated_at': updatedAt,
     };
   }
 

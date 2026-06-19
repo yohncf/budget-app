@@ -3,10 +3,15 @@ import 'package:google_fonts/google_fonts.dart';
 
 class AppTheme {
   // Vibrant custom color palette
-  static const Color darkBackground = Color(0xFF0F0F1A);
-  static const Color darkCard = Color(0xFF18182D);
-  static const Color primaryPurple = Color(0xFF8B5CF6);
-  static const Color accentCyan = Color(0xFF06B6D4);
+  static const Color darkBackground = Color(0xFF09090B);
+  static const Color darkCard = Color(0xFF141417);
+  static const Color mainAction = Color(0xFF80C000);
+  static const Color secondaryColor = Color(0xFF4D0097);
+
+  // Maintain aliases pointing to new colors to preserve existing code references
+  static const Color primaryPurple = mainAction;
+  static const Color accentCyan = secondaryColor;
+
   static const Color successGreen = Color(0xFF10B981);
   static const Color warningOrange = Color(0xFFF59E0B);
   static const Color dangerRed = Color(0xFFEF4444);
@@ -15,25 +20,25 @@ class AppTheme {
 
   // Premium Gradients
   static const LinearGradient primaryGradient = LinearGradient(
-    colors: [primaryPurple, Color(0xFF6D28D9)],
+    colors: [mainAction, Color(0xFF5E8C00)],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
 
   static const LinearGradient accentGradient = LinearGradient(
-    colors: [accentCyan, Color(0xFF0891B2)],
+    colors: [secondaryColor, Color(0xFF2E0062)],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
 
   static const LinearGradient backgroundGradient = LinearGradient(
-    colors: [darkBackground, Color(0xFF07070F)],
+    colors: [darkBackground, Color(0xFF040405)],
     begin: Alignment.topCenter,
     end: Alignment.bottomCenter,
   );
 
   static const LinearGradient cardGradient = LinearGradient(
-    colors: [Color(0xFF1E1E38), Color(0xFF141426)],
+    colors: [Color(0xFF18181F), Color(0xFF0F0F12)],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
@@ -41,7 +46,7 @@ class AppTheme {
   static ThemeData get darkTheme {
     return ThemeData(
       brightness: Brightness.dark,
-      primaryColor: primaryPurple,
+      primaryColor: mainAction,
       scaffoldBackgroundColor: darkBackground,
       cardColor: darkCard,
       textTheme: TextTheme(
@@ -71,12 +76,12 @@ class AppTheme {
         elevation: 8,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
-          side: const BorderSide(color: Color(0xFF2E2E4A), width: 1),
+          side: const BorderSide(color: Color(0xFF23232A), width: 1),
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: const Color(0xFF21213E),
+        fillColor: const Color(0xFF1D1D22),
         hintStyle: const TextStyle(color: textSecondary),
         labelStyle: const TextStyle(color: textPrimary),
         border: OutlineInputBorder(
@@ -85,19 +90,20 @@ class AppTheme {
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: Color(0xFF2E2E4A), width: 1),
+          borderSide: const BorderSide(color: Color(0xFF23232A), width: 1),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: primaryPurple, width: 2),
+          borderSide: const BorderSide(color: mainAction, width: 2),
         ),
       ),
       colorScheme: const ColorScheme.dark(
-        primary: primaryPurple,
-        secondary: accentCyan,
+        primary: mainAction,
+        secondary: secondaryColor,
         surface: darkCard,
         error: dangerRed,
       ),
     );
   }
 }
+

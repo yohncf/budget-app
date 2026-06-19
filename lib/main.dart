@@ -10,7 +10,6 @@ import 'views/dashboard_page.dart';
 import 'views/ledger_page.dart';
 import 'views/accounts_page.dart';
 import 'views/login_page.dart';
-import 'models/category.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -99,26 +98,6 @@ class _MainLayoutState extends State<MainLayout> {
   @override
   void initState() {
     super.initState();
-    // Proactively seed basic categories for a premium first-time experience
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _seedDefaultCategories();
-    });
-  }
-
-  void _seedDefaultCategories() async {
-    final ds = Provider.of<DataService>(context, listen: false);
-    if (ds.categories.isEmpty) {
-      final defaultCats = [
-        Category(id: 'cat_salary', name: 'Salary', type: 'income', createdAt: DateTime.now()),
-        Category(id: 'cat_groceries', name: 'Groceries', type: 'expense', createdAt: DateTime.now()),
-        Category(id: 'cat_dining', name: 'Dining Out', type: 'expense', createdAt: DateTime.now()),
-        Category(id: 'cat_transfer', name: 'Savings Transfer', type: 'transfer', createdAt: DateTime.now()),
-        Category(id: 'cat_reimburse', name: 'Corporate Reimbursement', type: 'reimbursement', createdAt: DateTime.now()),
-      ];
-      for (var cat in defaultCats) {
-        await ds.addCategory(cat);
-      }
-    }
   }
 
   @override
@@ -137,35 +116,96 @@ class _MainLayoutState extends State<MainLayout> {
               });
             },
             unselectedLabelTextStyle: const TextStyle(color: AppTheme.textSecondary, fontSize: 11),
-            selectedLabelTextStyle: const TextStyle(color: AppTheme.accentCyan, fontSize: 12, fontWeight: FontWeight.bold),
+            selectedLabelTextStyle: const TextStyle(color: AppTheme.mainAction, fontSize: 12, fontWeight: FontWeight.bold),
             leading: Padding(
               padding: const EdgeInsets.symmetric(vertical: 24.0),
-              child: Image.network(
-                'https://img.icons8.com/color/96/000000/google-wallet.png',
+              child: Image.asset(
+                'assets/images/app_logo.png',
                 width: 48,
                 height: 48,
-                errorBuilder: (context, error, stackTrace) => const Icon(Icons.account_balance_wallet, size: 36, color: AppTheme.primaryPurple),
+                errorBuilder: (context, error, stackTrace) => const Icon(Icons.analytics, size: 36, color: AppTheme.mainAction),
               ),
+            ),
+            trailing: Consumer<DataService>(
+              builder: (context, ds, child) {
+                final displayCurrencies = ds.availableDisplayCurrencies;
+                return Padding(
+                  padding: const EdgeInsets.only(top: 32.0, bottom: 16.0),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1D1D22),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFF23232A)),
+                    ),
+                    child: PopupMenuButton<String>(
+                      initialValue: ds.displayCurrency,
+                      tooltip: 'Change display currency',
+                      onSelected: (currency) {
+                        ds.setDisplayCurrency(currency);
+                      },
+                      offset: const Offset(60, 0),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              ds.displayCurrency,
+                              style: const TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                color: AppTheme.mainAction,
+                              ),
+                            ),
+                            const SizedBox(width: 2),
+                            const Icon(
+                              Icons.arrow_drop_down,
+                              size: 14,
+                              color: AppTheme.textSecondary,
+                            ),
+                          ],
+                        ),
+                      ),
+                      color: AppTheme.darkCard,
+                      itemBuilder: (context) {
+                        return displayCurrencies.map((c) {
+                          return PopupMenuItem<String>(
+                            value: c,
+                            child: Text(
+                              c,
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: ds.displayCurrency == c ? FontWeight.bold : FontWeight.normal,
+                                color: ds.displayCurrency == c ? AppTheme.mainAction : Colors.white,
+                              ),
+                            ),
+                          );
+                        }).toList();
+                      },
+                    ),
+                  ),
+                );
+              },
             ),
             destinations: const [
               NavigationRailDestination(
                 icon: Icon(Icons.dashboard_outlined),
-                selectedIcon: Icon(Icons.dashboard, color: AppTheme.accentCyan),
+                selectedIcon: Icon(Icons.dashboard, color: AppTheme.mainAction),
                 label: Text('Dashboard'),
               ),
               NavigationRailDestination(
                 icon: Icon(Icons.list_alt_outlined),
-                selectedIcon: Icon(Icons.list_alt, color: AppTheme.accentCyan),
+                selectedIcon: Icon(Icons.list_alt, color: AppTheme.mainAction),
                 label: Text('Ledger'),
               ),
               NavigationRailDestination(
                 icon: Icon(Icons.account_balance_wallet_outlined),
-                selectedIcon: Icon(Icons.account_balance_wallet, color: AppTheme.accentCyan),
+                selectedIcon: Icon(Icons.account_balance_wallet, color: AppTheme.mainAction),
                 label: Text('Accounts'),
               ),
             ],
           ),
-          const VerticalDivider(thickness: 1, width: 1, color: Color(0xFF2E2E4A)),
+          const VerticalDivider(thickness: 1, width: 1, color: Color(0xFF23232A)),
           
           // Main Content
           Expanded(

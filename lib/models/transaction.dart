@@ -73,14 +73,49 @@ class Transaction {
       'amount': amount,
       'currency': currency,
       'exchange_rate': exchangeRate,
-      'date': date.toIso8601String(),
+      'date': date,
       'description': description,
       'status': status,
       'is_recurring': isRecurring,
       'recurring_id': recurringId,
       'tags': tags,
       'sheets_row_id': sheetsRowId,
-      'created_at': createdAt.toIso8601String(),
+      'created_at': createdAt,
     };
   }
+
+  Transaction copyWith({
+    String? id,
+    String? accountId,
+    String? categoryId,
+    double? amount,
+    String? currency,
+    double? exchangeRate,
+    DateTime? date,
+    String? description,
+    String? status,
+    bool? isRecurring,
+    String? recurringId,
+    List<String>? tags,
+    int? sheetsRowId,
+    DateTime? createdAt,
+  }) {
+    return Transaction(
+      id: id ?? this.id,
+      accountId: accountId ?? this.accountId,
+      categoryId: categoryId ?? this.categoryId,
+      amount: amount ?? this.amount,
+      currency: currency ?? this.currency,
+      exchangeRate: exchangeRate ?? this.exchangeRate,
+      date: date ?? this.date,
+      description: description ?? this.description,
+      status: status ?? this.status,
+      isRecurring: isRecurring ?? this.isRecurring,
+      recurringId: recurringId ?? this.recurringId,
+      tags: tags ?? this.tags,
+      sheetsRowId: sheetsRowId ?? this.sheetsRowId,
+      createdAt: createdAt ?? this.createdAt,
+    );
+  }
 }
+

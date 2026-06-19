@@ -4,6 +4,7 @@ import '../services/data_service.dart';
 import '../models/account.dart';
 import '../models/category.dart';
 import '../models/transaction.dart';
+import '../models/account_snapshot.dart';
 import '../core/theme.dart';
 import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
@@ -22,6 +23,7 @@ class _AccountsPageState extends State<AccountsPage> {
   final _nameController = TextEditingController();
   final _institutionController = TextEditingController();
   String _selectedType = 'checking';
+  String _selectedCurrency = 'MXN';
   final _balanceController = TextEditingController();
 
   @override
@@ -114,6 +116,24 @@ class _AccountsPageState extends State<AccountsPage> {
 
   Widget _buildAccountsGrid(BuildContext context, DataService dataService, NumberFormat currencyFormatter, {required bool isActive}) {
     final filteredAccounts = dataService.accounts.where((a) => (a.status == 'active') == isActive).toList();
+
+    // Sort accounts by type hierarchy
+    const typeOrder = {
+      'checking': 0,
+      'savings': 1,
+      'credit_card': 2,
+      'investment': 3,
+      'crypto_wallet': 4,
+      'retirement': 5,
+    };
+    filteredAccounts.sort((a, b) {
+      final orderA = typeOrder[a.type] ?? 99;
+      final orderB = typeOrder[b.type] ?? 99;
+      if (orderA != orderB) {
+        return orderA.compareTo(orderB);
+      }
+      return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+    });
 
     if (filteredAccounts.isEmpty) {
       return Center(
@@ -281,7 +301,7 @@ class _AccountsPageState extends State<AccountsPage> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          currencyFormatter.format(totalVal),
+                          dataService.formatAndConvert(totalVal, account.currency),
                           style: Theme.of(context).textTheme.titleLarge?.copyWith(
                                 fontWeight: FontWeight.bold,
                                 fontSize: 18,
@@ -290,7 +310,7 @@ class _AccountsPageState extends State<AccountsPage> {
                         ),
                         if (isBrokerage)
                           Text(
-                            'Cash: ${currencyFormatter.format(account.currentBalance)}',
+                            'Cash: ${dataService.formatAndConvert(account.currentBalance, account.currency)}',
                             style: const TextStyle(fontSize: 10, color: AppTheme.textSecondary),
                           ),
                       ],
@@ -306,13 +326,24 @@ class _AccountsPageState extends State<AccountsPage> {
                         width: 1.0,
                       )
                     ),
-                    child: Text(
-                      typeLabel,
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                        color: typeColor,
-                      ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          typeIcon,
+                          size: 11,
+                          color: typeColor,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          typeLabel,
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            color: typeColor,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],
@@ -358,6 +389,21 @@ class _AccountsPageState extends State<AccountsPage> {
               const SizedBox(height: 24),
               ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.accentCyan,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                icon: const Icon(Icons.camera_alt_outlined),
+                label: const Text('Create Balance Snapshot'),
+                onPressed: () {
+                  Navigator.of(context).pop();
+                  _showCreateSnapshotConfirmation(context, account, dataService);
+                },
+              ),
+              const SizedBox(height: 12),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
                   backgroundColor: AppTheme.primaryPurple,
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 14),
@@ -396,7 +442,7 @@ class _AccountsPageState extends State<AccountsPage> {
                     border: Border.all(color: AppTheme.dangerRed.withOpacity(0.3)),
                   ),
                   child: Text(
-                    'Delete Unavailable: Account total valuation is not zero (${NumberFormat.simpleCurrency(name: 'USD').format(totalVal)}). You can only delete accounts with a zero balance. Please archive this account instead.',
+                    'Delete Unavailable: Account total valuation is not zero (${dataService.formatAndConvert(totalVal, account.currency)}). You can only delete accounts with a zero balance. Please archive this account instead.',
                     style: const TextStyle(fontSize: 12, color: AppTheme.dangerRed, height: 1.4),
                   ),
                 ),
@@ -422,6 +468,70 @@ class _AccountsPageState extends State<AccountsPage> {
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
               child: const Text('Close', style: TextStyle(color: AppTheme.textSecondary)),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _showCreateSnapshotConfirmation(BuildContext context, Account account, DataService dataService) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          backgroundColor: AppTheme.darkCard,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Row(
+            children: [
+              const Icon(Icons.camera_alt_outlined, color: AppTheme.accentCyan),
+              const SizedBox(width: 8),
+              const Text('Create Balance Snapshot'),
+            ],
+          ),
+          content: Text(
+            'Create a new baseline snapshot for "${account.name}" at the current balance of ${dataService.formatAndConvert(account.currentBalance, account.currency)}?\n\n'
+            'This snapshot will serve as a historical record log for net worth growth tracking.',
+            style: Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.4),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel', style: TextStyle(color: AppTheme.textSecondary)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.accentCyan,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Create'),
+              onPressed: () async {
+                final String snapshotId = const Uuid().v4().substring(0, 20);
+                final newSnapshot = AccountSnapshot(
+                  id: snapshotId,
+                  accountId: account.id,
+                  snapshotDate: DateTime.now(),
+                  balance: account.currentBalance,
+                  currency: account.currency,
+                  createdAt: DateTime.now(),
+                );
+
+                try {
+                  await dataService.addAccountSnapshot(newSnapshot);
+                  if (context.mounted) {
+                    Navigator.of(context).pop();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Snapshot for "${account.name}" created successfully!')),
+                    );
+                  }
+                } catch (e) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Error creating snapshot: $e')),
+                    );
+                  }
+                }
+              },
             ),
           ],
         );
@@ -565,6 +675,7 @@ class _AccountsPageState extends State<AccountsPage> {
       _institutionController.clear();
       _balanceController.clear();
       _selectedType = 'checking';
+      _selectedCurrency = 'MXN';
     });
 
     showDialog(
@@ -592,11 +703,21 @@ class _AccountsPageState extends State<AccountsPage> {
                       ),
                       const SizedBox(height: 16),
                       DropdownButtonFormField<String>(
+                        value: _selectedType,
                         decoration: const InputDecoration(labelText: 'Account Type'),
                         items: ['checking', 'savings', 'credit_card', 'investment', 'crypto_wallet', 'retirement'].map((t) {
                           return DropdownMenuItem(value: t, child: Text(t.toUpperCase()));
                         }).toList(),
                         onChanged: (val) => setDialogState(() => _selectedType = val!),
+                      ),
+                      const SizedBox(height: 16),
+                      DropdownButtonFormField<String>(
+                        value: _selectedCurrency,
+                        decoration: const InputDecoration(labelText: 'Account Currency'),
+                        items: ['MXN', 'USD', 'SOL', 'PEN'].map((c) {
+                          return DropdownMenuItem(value: c, child: Text(c));
+                        }).toList(),
+                        onChanged: (val) => setDialogState(() => _selectedCurrency = val!),
                       ),
                       const SizedBox(height: 16),
                       TextField(
@@ -614,7 +735,7 @@ class _AccountsPageState extends State<AccountsPage> {
                   onPressed: () => Navigator.of(context).pop(),
                 ),
                 ElevatedButton(
-                  style: ElevatedButton.styleFrom(backgroundColor: AppTheme.accentCyan),
+                  style: ElevatedButton.styleFrom(backgroundColor: AppTheme.mainAction),
                   child: const Text('Create'),
                   onPressed: () async {
                     if (_nameController.text.trim().isEmpty) {
@@ -632,48 +753,63 @@ class _AccountsPageState extends State<AccountsPage> {
                       name: _nameController.text.trim(),
                       institution: _institutionController.text.trim().isEmpty ? null : _institutionController.text.trim(),
                       type: _selectedType,
-                      currency: 'USD',
-                      currentBalance: 0.0, // Rule 2.2: opening balance is created as transaction, not hardcoded initial state!
+                      currency: _selectedCurrency,
+                      currentBalance: 0.0,
                       createdAt: DateTime.now(),
                       updatedAt: DateTime.now(),
                     );
 
-                    await dataService.addAccount(newAcc);
+                    final messenger = ScaffoldMessenger.of(context);
 
-                    // Rule 2.2: Opening balance is a transaction using System Category: Opening Balance
-                    if (initBalance != 0) {
-                      Category? opCat;
-                      for (var c in dataService.categories) {
-                        if (c.name == 'System: Opening Balance') {
-                          opCat = c;
-                          break;
-                        }
-                      }
-                      if (opCat == null) {
-                        opCat = Category(
-                          id: 'sys_opening_balance',
-                          name: 'System: Opening Balance',
-                          type: 'income',
-                          createdAt: DateTime.now(),
-                        );
-                        await dataService.addCategory(opCat);
-                      }
+                    // Unfocus to close keyboard and overlays safely before popping
+                    FocusManager.instance.primaryFocus?.unfocus();
 
-                      final opTx = Transaction(
-                        id: _uuid.v4().substring(0, 20),
-                        accountId: accId,
-                        categoryId: opCat.id,
-                        amount: initBalance,
-                        currency: 'USD',
-                        date: DateTime.now(),
-                        description: 'System: Opening Balance Initialization',
-                        createdAt: DateTime.now(),
-                      );
-                      await dataService.addTransaction(opTx);
-                    }
+                    // Wait a frame for focus changes to propagate
+                    await Future.delayed(Duration.zero);
 
+                    // Dismiss dialog first to prevent Flutter Web widget tree collision on rebuild
                     if (context.mounted) {
                       Navigator.of(context).pop();
+                    }
+
+                    try {
+                      await dataService.addAccount(newAcc);
+
+                      // Rule 2.2: Opening balance is a transaction using System Category: Opening Balance
+                      if (initBalance != 0) {
+                        Category? opCat;
+                        for (var c in dataService.categories) {
+                          if (c.name == 'System: Opening Balance') {
+                            opCat = c;
+                            break;
+                          }
+                        }
+                        if (opCat == null) {
+                          opCat = Category(
+                            id: 'sys_opening_balance',
+                            name: 'System: Opening Balance',
+                            type: 'income',
+                            createdAt: DateTime.now(),
+                          );
+                          await dataService.addCategory(opCat);
+                        }
+
+                        final opTx = Transaction(
+                          id: _uuid.v4().substring(0, 20),
+                          accountId: accId,
+                          categoryId: opCat.id,
+                          amount: initBalance,
+                          currency: _selectedCurrency,
+                          date: DateTime.now(),
+                          description: 'System: Opening Balance Initialization',
+                          createdAt: DateTime.now(),
+                        );
+                        await dataService.addTransaction(opTx);
+                      }
+                    } catch (e) {
+                      messenger.showSnackBar(
+                        SnackBar(content: Text('Error: ${e.toString()}')),
+                      );
                     }
                   },
                 ),

@@ -1,6 +1,7 @@
 {
   "scripts": {
-    "sync": "node replicate.js"
+    "sync": "node replicate.js",
+    "sync-to-supabase": "node sync_to_supabase.js"
   },
   "dependencies": {
     "firebase": "^12.14.0"

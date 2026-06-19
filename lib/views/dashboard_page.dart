@@ -13,7 +13,6 @@ class DashboardPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final dataService = Provider.of<DataService>(context);
-    final currencyFormatter = NumberFormat.simpleCurrency(name: 'USD');
 
     return Scaffold(
       body: Container(
@@ -44,22 +43,78 @@ class DashboardPage extends StatelessWidget {
                         ),
                       ],
                     ),
-                    Row(
-                      children: [
-                        Container(
-                          width: 12,
-                          height: 12,
-                          decoration: const BoxDecoration(
-                            color: AppTheme.successGreen,
-                            shape: BoxShape.circle,
+                    Consumer<DataService>(
+                      builder: (context, ds, child) {
+                        final state = ds.backupState;
+                        String text = 'Sync: Checking...';
+                        Color statusColor = AppTheme.textSecondary;
+                        bool isLoading = false;
+
+                        if (state != null) {
+                          final status = state['status'] ?? '';
+                          final lastDate = state['last_backup_date'] ?? 'Never';
+                          if (status == 'in_progress') {
+                            text = 'Syncing to Supabase...';
+                            statusColor = AppTheme.mainAction;
+                            isLoading = true;
+                          } else if (status == 'success') {
+                            text = 'Synced: $lastDate';
+                            statusColor = AppTheme.successGreen;
+                          } else if (status == 'failed') {
+                            text = 'Sync Failed';
+                            statusColor = AppTheme.dangerRed;
+                          }
+                        }
+
+                        return Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF1D1D22),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: const Color(0xFF23232A)),
                           ),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          'Primary/Backup Synced',
-                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppTheme.successGreen),
-                        ),
-                      ],
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Image.asset(
+                                'assets/images/supabase_logo.png',
+                                width: 16,
+                                height: 16,
+                                errorBuilder: (context, error, stackTrace) =>
+                                    const Icon(Icons.cloud_upload_outlined, size: 16, color: AppTheme.textSecondary),
+                              ),
+                              const SizedBox(width: 8),
+                              if (isLoading)
+                                const SizedBox(
+                                  width: 10,
+                                  height: 10,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 1.5,
+                                    valueColor: AlwaysStoppedAnimation<Color>(AppTheme.mainAction),
+                                  ),
+                                )
+                              else
+                                Container(
+                                  width: 8,
+                                  height: 8,
+                                  decoration: BoxDecoration(
+                                    color: statusColor,
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                              const SizedBox(width: 8),
+                              Text(
+                                text,
+                                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                      color: Colors.white,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
                     ),
                   ],
                 ),
@@ -78,7 +133,7 @@ class DashboardPage extends StatelessWidget {
                                 flex: 3,
                                 child: Column(
                                   children: [
-                                    _buildNetWorthCard(context, dataService, currencyFormatter),
+                                    _buildNetWorthCard(context, dataService),
                                     const SizedBox(height: 24),
                                     _buildChartsSection(context, dataService),
                                   ],
@@ -87,15 +142,15 @@ class DashboardPage extends StatelessWidget {
                               const SizedBox(width: 24),
                               Expanded(
                                 flex: 2,
-                                child: _buildAccountsSection(context, dataService, currencyFormatter),
+                                child: _buildAccountsSection(context, dataService),
                               ),
                             ],
                           )
                         : Column(
                             children: [
-                              _buildNetWorthCard(context, dataService, currencyFormatter),
+                              _buildNetWorthCard(context, dataService),
                               const SizedBox(height: 24),
-                              _buildAccountsSection(context, dataService, currencyFormatter),
+                              _buildAccountsSection(context, dataService),
                               const SizedBox(height: 24),
                               _buildChartsSection(context, dataService),
                             ],
@@ -110,7 +165,7 @@ class DashboardPage extends StatelessWidget {
     );
   }
 
-  Widget _buildNetWorthCard(BuildContext context, DataService service, NumberFormat formatter) {
+  Widget _buildNetWorthCard(BuildContext context, DataService service) {
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
@@ -118,7 +173,7 @@ class DashboardPage extends StatelessWidget {
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
-            color: AppTheme.primaryPurple.withOpacity(0.3),
+            color: AppTheme.mainAction.withOpacity(0.3),
             blurRadius: 20,
             offset: const Offset(0, 10),
           )
@@ -138,7 +193,7 @@ class DashboardPage extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             Text(
-              formatter.format(service.netWorth),
+              service.formatCurrency(service.netWorth),
               style: Theme.of(context).textTheme.displayLarge?.copyWith(
                     color: Colors.white,
                     fontSize: 48,
@@ -169,6 +224,7 @@ class DashboardPage extends StatelessWidget {
     // Generate simple charts based on transaction categories
     final Map<String, double> categorySummaries = {};
     for (var tx in service.transactions) {
+      if (tx.status == 'deleted') continue;
       if (tx.amount < 0) {
         Category? cat;
         for (var c in service.categories) {
@@ -180,7 +236,9 @@ class DashboardPage extends StatelessWidget {
         cat ??= Category(id: '', name: 'Miscellaneous', type: 'expense', createdAt: DateTime.now());
         // Exclude internal transfers from charts as per Rule 2.4
         if (cat.type != 'transfer') {
-          categorySummaries[cat.name] = (categorySummaries[cat.name] ?? 0) + tx.amount.abs();
+          // Convert amount to display currency first
+          final amountInDisplay = service.convertToDisplay(tx.amount.abs(), tx.currency);
+          categorySummaries[cat.name] = (categorySummaries[cat.name] ?? 0) + amountInDisplay;
         }
       }
     }
@@ -188,8 +246,8 @@ class DashboardPage extends StatelessWidget {
     final List<PieChartSectionData> chartSections = [];
     int index = 0;
     final colors = [
-      AppTheme.primaryPurple,
-      AppTheme.accentCyan,
+      AppTheme.mainAction,
+      AppTheme.secondaryColor,
       AppTheme.successGreen,
       AppTheme.warningOrange,
       AppTheme.dangerRed,
@@ -203,9 +261,9 @@ class DashboardPage extends StatelessWidget {
         PieChartSectionData(
           color: color,
           value: sum,
-          title: '${(sum).toStringAsFixed(0)}',
+          title: service.formatCurrency(sum),
           radius: 50,
-          titleStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
+          titleStyle: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white),
         ),
       );
       index++;
@@ -290,7 +348,7 @@ class DashboardPage extends StatelessWidget {
     );
   }
 
-  Widget _buildAccountsSection(BuildContext context, DataService service, NumberFormat formatter) {
+  Widget _buildAccountsSection(BuildContext context, DataService service) {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(24.0),
@@ -305,6 +363,25 @@ class DashboardPage extends StatelessWidget {
             Builder(
               builder: (context) {
                 final activeAccounts = service.accounts.where((a) => a.status == 'active').toList();
+                
+                // Sort accounts by type hierarchy
+                const typeOrder = {
+                  'checking': 0,
+                  'savings': 1,
+                  'credit_card': 2,
+                  'investment': 3,
+                  'crypto_wallet': 4,
+                  'retirement': 5,
+                };
+                activeAccounts.sort((a, b) {
+                  final orderA = typeOrder[a.type] ?? 99;
+                  final orderB = typeOrder[b.type] ?? 99;
+                  if (orderA != orderB) {
+                    return orderA.compareTo(orderB);
+                  }
+                  return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+                });
+
                 if (activeAccounts.isEmpty) {
                   return const Center(
                     child: Padding(
@@ -317,10 +394,10 @@ class DashboardPage extends StatelessWidget {
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
                   itemCount: activeAccounts.length,
-                  separatorBuilder: (context, index) => const Divider(color: Color(0xFF2E2E4A)),
+                  separatorBuilder: (context, index) => const Divider(color: Color(0xFF23232A)),
                   itemBuilder: (context, index) {
                     final account = activeAccounts[index];
-                    return _buildAccountRow(context, account, service, formatter);
+                    return _buildAccountRow(context, account, service);
                   },
                 );
               },
@@ -331,7 +408,7 @@ class DashboardPage extends StatelessWidget {
     );
   }
 
-  Widget _buildAccountRow(BuildContext context, Account account, DataService service, NumberFormat formatter) {
+  Widget _buildAccountRow(BuildContext context, Account account, DataService service) {
     // Rule 2.1 brokerage rules
     double totalVal = account.currentBalance;
     bool isBrokerage = account.type == 'investment' || account.type == 'retirement';
@@ -355,10 +432,10 @@ class DashboardPage extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: const Color(0xFF21213E),
+              color: const Color(0xFF1D1D22),
               borderRadius: BorderRadius.circular(12),
             ),
-            child: Icon(iconData, color: AppTheme.primaryPurple),
+            child: Icon(iconData, color: AppTheme.mainAction),
           ),
           const SizedBox(width: 16),
           Expanded(
@@ -381,7 +458,7 @@ class DashboardPage extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Text(
-                formatter.format(totalVal),
+                service.formatAndConvert(totalVal, account.currency),
                 style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                       fontWeight: FontWeight.bold,
                       color: account.type == 'credit_card' ? AppTheme.dangerRed : Colors.white,
@@ -389,7 +466,7 @@ class DashboardPage extends StatelessWidget {
               ),
               if (isBrokerage)
                 Text(
-                  'Cash: ${formatter.format(account.currentBalance)}',
+                  'Cash: ${service.formatAndConvert(account.currentBalance, account.currency)}',
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 10),
                 ),
             ],

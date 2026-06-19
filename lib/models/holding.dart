@@ -43,7 +43,7 @@ class Holding {
       'asset_id': assetId,
       'quantity': quantity,
       'avg_buy_price': avgBuyPrice,
-      'updated_at': updatedAt.toIso8601String(),
+      'updated_at': updatedAt,
     };
   }
 }

@@ -280,9 +280,15 @@ function toFirestoreValue(val, key) {
 function syncToSupabase(tableName, records) {
   const url = `https://${SUPABASE_PROJECT_REF}.supabase.co/rest/v1/${tableName}`;
   
-  // Format payload for PostgreSQL compatibility
+  const floatFields = ['current_balance', 'limit', 'balance', 'amount', 'exchange_rate', 'quantity', 'unit_price', 'avg_buy_price', 'target_amount'];
   const supabaseRecords = records.map(record => {
     const formatted = { ...record };
+    
+    for (const key in formatted) {
+      if (floatFields.includes(key) && formatted[key] !== null && formatted[key] !== undefined) {
+        formatted[key] = parseFloat(formatted[key]);
+      }
+    }
     
     // Convert tags to PG array format robustly
     if (formatted.hasOwnProperty('tags')) {

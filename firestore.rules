@@ -30,7 +30,8 @@ service cloud.firestore {
     // Transactions collection
     match /transactions/{transactionId} {
       allow read: if isAdmin();
-      allow write: if isAdmin()
+      allow delete: if isAdmin();
+      allow create, update: if isAdmin()
         && request.resource.data.amount != 0
         && (
              // Rule 2.3: expense is strictly negative (< 0)
@@ -48,14 +49,18 @@ service cloud.firestore {
 
     // Asset Transactions collection (historical trade execution receipts)
     match /asset_transactions/{assetTxId} {
-      allow read, write: if isAdmin()
+      allow read: if isAdmin();
+      allow delete: if isAdmin();
+      allow create, update: if isAdmin()
         && request.resource.data.quantity > 0
         && request.resource.data.unit_price > 0;
     }
 
     // Holdings collection
     match /holdings/{holdingId} {
-      allow read, write: if isAdmin()
+      allow read: if isAdmin();
+      allow delete: if isAdmin();
+      allow create, update: if isAdmin()
         && request.resource.data.quantity >= 0
         && request.resource.data.avg_buy_price >= 0;
     }
@@ -67,7 +72,9 @@ service cloud.firestore {
 
     // Budget Targets collection
     match /budget_targets/{budgetId} {
-      allow read, write: if isAdmin()
+      allow read: if isAdmin();
+      allow delete: if isAdmin();
+      allow create, update: if isAdmin()
         && request.resource.data.target_amount > 0;
     }
 
@@ -78,6 +85,11 @@ service cloud.firestore {
 
     // Assets collection
     match /assets/{assetId} {
+      allow read, write: if isAdmin();
+    }
+
+    // Config collection
+    match /config/{configId} {
       allow read, write: if isAdmin();
     }
   }

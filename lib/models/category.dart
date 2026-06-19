@@ -39,7 +39,7 @@ class Category {
       'parent_id': parentId,
       'icon': icon,
       'color_hex': colorHex,
-      'created_at': createdAt.toIso8601String(),
+      'created_at': createdAt,
     };
   }
 }

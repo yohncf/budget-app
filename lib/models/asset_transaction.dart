@@ -51,7 +51,7 @@ class AssetTransaction {
       'type': type,
       'quantity': quantity,
       'unit_price': unitPrice,
-      'executed_at': executedAt.toIso8601String(),
+      'executed_at': executedAt,
     };
   }
 }
