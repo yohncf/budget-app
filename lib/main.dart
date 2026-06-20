@@ -102,6 +102,122 @@ class _MainLayoutState extends State<MainLayout> {
 
   @override
   Widget build(BuildContext context) {
+    final isMobile = MediaQuery.of(context).size.width < 768;
+
+    if (isMobile) {
+      return Scaffold(
+        appBar: AppBar(
+          backgroundColor: AppTheme.darkCard,
+          elevation: 0,
+          title: Text(
+            _selectedIndex == 0
+                ? 'Dashboard'
+                : _selectedIndex == 1
+                    ? 'Ledger'
+                    : 'Accounts',
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+          ),
+          actions: [
+            Consumer<DataService>(
+              builder: (context, ds, child) {
+                final displayCurrencies = ds.availableDisplayCurrencies;
+                return Container(
+                  margin: const EdgeInsets.only(right: 16.0),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1D1D22),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFF23232A)),
+                  ),
+                  child: PopupMenuButton<String>(
+                    initialValue: ds.displayCurrency,
+                    tooltip: 'Change display currency',
+                    onSelected: (currency) {
+                      ds.setDisplayCurrency(currency);
+                    },
+                    color: AppTheme.darkCard,
+                    itemBuilder: (context) {
+                      return displayCurrencies.map((c) {
+                        return PopupMenuItem<String>(
+                          value: c,
+                          child: Text(
+                            c,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: ds.displayCurrency == c ? FontWeight.bold : FontWeight.normal,
+                              color: ds.displayCurrency == c ? AppTheme.mainAction : Colors.white,
+                            ),
+                          ),
+                        );
+                      }).toList();
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 6.0),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            ds.displayCurrency,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: AppTheme.mainAction,
+                            ),
+                          ),
+                          const SizedBox(width: 2),
+                          const Icon(
+                            Icons.arrow_drop_down,
+                            size: 14,
+                            color: AppTheme.textSecondary,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
+        body: Container(
+          decoration: const BoxDecoration(
+            gradient: AppTheme.backgroundGradient,
+          ),
+          child: _pages[_selectedIndex],
+        ),
+        bottomNavigationBar: NavigationBar(
+          backgroundColor: AppTheme.darkCard,
+          indicatorColor: AppTheme.mainAction.withOpacity(0.15),
+          selectedIndex: _selectedIndex,
+          onDestinationSelected: (int index) {
+            setState(() {
+              _selectedIndex = index;
+            });
+          },
+          height: 65,
+          labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+          destinations: const [
+            NavigationDestination(
+              icon: Icon(Icons.dashboard_outlined, color: AppTheme.textSecondary),
+              selectedIcon: Icon(Icons.dashboard, color: AppTheme.mainAction),
+              label: 'Dashboard',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.list_alt_outlined, color: AppTheme.textSecondary),
+              selectedIcon: Icon(Icons.list_alt, color: AppTheme.mainAction),
+              label: 'Ledger',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.account_balance_wallet_outlined, color: AppTheme.textSecondary),
+              selectedIcon: Icon(Icons.account_balance_wallet, color: AppTheme.mainAction),
+              label: 'Accounts',
+            ),
+          ],
+        ),
+      );
+    }
+
     return Scaffold(
       body: Row(
         children: [
@@ -144,28 +260,6 @@ class _MainLayoutState extends State<MainLayout> {
                         ds.setDisplayCurrency(currency);
                       },
                       offset: const Offset(60, 0),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              ds.displayCurrency,
-                              style: const TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold,
-                                color: AppTheme.mainAction,
-                              ),
-                            ),
-                            const SizedBox(width: 2),
-                            const Icon(
-                              Icons.arrow_drop_down,
-                              size: 14,
-                              color: AppTheme.textSecondary,
-                            ),
-                          ],
-                        ),
-                      ),
                       color: AppTheme.darkCard,
                       itemBuilder: (context) {
                         return displayCurrencies.map((c) {
@@ -182,6 +276,28 @@ class _MainLayoutState extends State<MainLayout> {
                           );
                         }).toList();
                       },
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              ds.displayCurrency,
+                              style: const TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppTheme.mainAction,
+                              ),
+                            ),
+                            const SizedBox(width: 2),
+                            const Icon(
+                              Icons.arrow_drop_down,
+                              size: 14,
+                              color: AppTheme.textSecondary,
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
                 );

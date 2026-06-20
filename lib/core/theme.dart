@@ -8,9 +8,8 @@ class AppTheme {
   static const Color mainAction = Color(0xFF80C000);
   static const Color secondaryColor = Color(0xFF4D0097);
 
-  // Maintain aliases pointing to new colors to preserve existing code references
   static const Color primaryPurple = mainAction;
-  static const Color accentCyan = secondaryColor;
+  static const Color accentCyan = Color(0xFF01FFFF);
 
   static const Color successGreen = Color(0xFF10B981);
   static const Color warningOrange = Color(0xFFF59E0B);

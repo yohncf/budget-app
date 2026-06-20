@@ -8,6 +8,7 @@ import '../models/account_snapshot.dart';
 import '../core/theme.dart';
 import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 class AccountsPage extends StatefulWidget {
   const AccountsPage({super.key});
@@ -25,12 +26,14 @@ class _AccountsPageState extends State<AccountsPage> {
   String _selectedType = 'checking';
   String _selectedCurrency = 'MXN';
   final _balanceController = TextEditingController();
+  final _limitController = TextEditingController();
 
   @override
   void dispose() {
     _nameController.dispose();
     _institutionController.dispose();
     _balanceController.dispose();
+    _limitController.dispose();
     super.dispose();
   }
 
@@ -38,6 +41,7 @@ class _AccountsPageState extends State<AccountsPage> {
   Widget build(BuildContext context) {
     final dataService = Provider.of<DataService>(context);
     final currencyFormatter = NumberFormat.simpleCurrency(name: 'USD');
+    final bool isMobile = MediaQuery.of(context).size.width < 600;
 
     return DefaultTabController(
       length: 2,
@@ -47,40 +51,70 @@ class _AccountsPageState extends State<AccountsPage> {
             gradient: AppTheme.backgroundGradient,
           ),
           child: Padding(
-            padding: const EdgeInsets.all(24.0),
+            padding: EdgeInsets.all(isMobile ? 12.0 : 24.0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Accounts Management',
-                          style: Theme.of(context).textTheme.displayLarge?.copyWith(fontSize: 28),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Create and monitor liquidity, brokerage containers, and debt accounts',
-                          style: Theme.of(context).textTheme.bodyMedium,
-                        ),
-                      ],
-                    ),
-                    ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.accentCyan,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                isMobile
+                    ? Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Accounts Management',
+                            style: Theme.of(context).textTheme.displayLarge?.copyWith(fontSize: 24),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Create and monitor accounts',
+                            style: Theme.of(context).textTheme.bodyMedium,
+                          ),
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppTheme.accentCyan,
+                                foregroundColor: Colors.black,
+                                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              ),
+                              icon: const Icon(Icons.account_balance),
+                              label: const Text('New Account'),
+                              onPressed: () => _showAddAccountDialog(context, dataService),
+                            ),
+                          ),
+                        ],
+                      )
+                    : Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Accounts Management',
+                                style: Theme.of(context).textTheme.displayLarge?.copyWith(fontSize: 28),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Create and monitor liquidity, brokerage containers, and debt accounts',
+                                style: Theme.of(context).textTheme.bodyMedium,
+                              ),
+                            ],
+                          ),
+                          ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppTheme.accentCyan,
+                              foregroundColor: Colors.black,
+                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                            icon: const Icon(Icons.account_balance),
+                            label: const Text('New Account'),
+                            onPressed: () => _showAddAccountDialog(context, dataService),
+                          ),
+                        ],
                       ),
-                      icon: const Icon(Icons.account_balance),
-                      label: const Text('New Account'),
-                      onPressed: () => _showAddAccountDialog(context, dataService),
-                    ),
-                  ],
-                ),
                 const SizedBox(height: 16),
                 
                 // Tab Bar
@@ -144,12 +178,28 @@ class _AccountsPageState extends State<AccountsPage> {
       );
     }
 
+    final bool isMobile = MediaQuery.of(context).size.width < 600;
+
+    if (isMobile) {
+      return ListView.builder(
+        padding: const EdgeInsets.symmetric(vertical: 8.0),
+        itemCount: filteredAccounts.length,
+        itemBuilder: (context, index) {
+          final account = filteredAccounts[index];
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 12.0),
+            child: _buildAccountCard(context, account, dataService, currencyFormatter),
+          );
+        },
+      );
+    }
+
     return GridView.builder(
       gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
         maxCrossAxisExtent: 350,
         mainAxisSpacing: 20,
         crossAxisSpacing: 20,
-        childAspectRatio: 1.35,
+        childAspectRatio: 1.5,
       ),
       itemCount: filteredAccounts.length,
       itemBuilder: (context, index) {
@@ -221,148 +271,284 @@ class _AccountsPageState extends State<AccountsPage> {
     final IconData typeIcon = typeDetails['icon'] as IconData;
     final String typeLabel = typeDetails['label'] as String;
 
-    return Card(
-      elevation: 4,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(
-          color: typeColor.withOpacity(0.3),
-          width: 1.5,
-        ),
-      ),
-      child: Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          gradient: LinearGradient(
-            colors: [
-              AppTheme.darkCard,
-              typeColor.withOpacity(0.05),
-            ],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
+    final bool isMobile = MediaQuery.of(context).size.width < 600;
+    final bool isLimitViolated = (account.type == 'credit_card' && account.limit > 0 && totalVal > account.limit) ||
+        ((account.type == 'checking' || account.type == 'savings') && account.limit > 0 && totalVal < account.limit);
+
+    // Get historical snapshots points for the graph
+    final accountSnapshots = dataService.snapshots
+        .where((s) => s.accountId == account.id)
+        .toList();
+    accountSnapshots.sort((a, b) => a.snapshotDate.compareTo(b.snapshotDate));
+    final List<double> points = accountSnapshots.map((s) => s.balance).toList();
+
+    double changePercent = 0.0;
+    if (points.length >= 2) {
+      final double prev = points[points.length - 2];
+      if (prev != 0.0) {
+        changePercent = ((points.last - prev) / prev) * 100.0;
+      }
+    }
+
+    final Color cardBorderColor = isLimitViolated
+        ? (account.type == 'credit_card' ? AppTheme.dangerRed : AppTheme.warningOrange)
+        : typeColor.withOpacity(0.35);
+
+    final Color glowColor = isLimitViolated
+        ? (account.type == 'credit_card' ? AppTheme.dangerRed : AppTheme.warningOrange)
+        : typeColor;
+
+    return AspectRatio(
+      aspectRatio: isMobile ? 2.2 : 1.586, // Sleeker ratio on mobile to prevent wasted space
+      child: Card(
+        elevation: 10,
+        margin: EdgeInsets.zero,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: BorderSide(
+            color: cardBorderColor,
+            width: isLimitViolated ? 2.0 : 1.2,
           ),
         ),
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            gradient: LinearGradient(
+              colors: [
+                const Color(0xFF131317),
+                glowColor.withOpacity(isLimitViolated ? 0.15 : 0.08),
+                const Color(0xFF09090B),
+              ],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(20),
+            child: Stack(
+              children: [
+                // Glowing background ambient decoration blobs
+                Positioned(
+                  right: -40,
+                  top: -40,
+                  child: Container(
+                    width: 150,
+                    height: 150,
                     decoration: BoxDecoration(
-                      color: typeColor.withOpacity(0.15),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Icon(
-                      typeIcon,
-                      color: typeColor,
-                      size: 20,
+                      shape: BoxShape.circle,
+                      gradient: RadialGradient(
+                        colors: [
+                          glowColor.withOpacity(0.22),
+                          glowColor.withOpacity(0.0),
+                        ],
+                      ),
                     ),
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.settings, size: 20, color: AppTheme.textSecondary),
-                    tooltip: 'Manage Account',
-                    onPressed: () => _showManageAccountDialog(context, account, dataService, totalVal),
+                ),
+                Positioned(
+                  left: -50,
+                  bottom: -50,
+                  child: Container(
+                    width: 180,
+                    height: 180,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: RadialGradient(
+                        colors: [
+                          glowColor.withOpacity(0.18),
+                          glowColor.withOpacity(0.0),
+                        ],
+                      ),
+                    ),
                   ),
-                ],
-              ),
-              const Spacer(),
-              Text(
-                account.name,
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 0.5,
-                    ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              const SizedBox(height: 2),
-              Text(
-                account.institution ?? "Unknown Institution",
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      fontSize: 12,
-                      color: AppTheme.textSecondary,
-                    ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              const SizedBox(height: 8),
-              Divider(color: typeColor.withOpacity(0.15), height: 1),
-              const SizedBox(height: 8),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          dataService.formatAndConvert(totalVal, account.currency),
-                          style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                ),
+
+                // Main content layout
+                Padding(
+                  padding: EdgeInsets.all(isMobile ? 11.0 : 18.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Top Row: Institution name & Account name + type column
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              account.institution?.toUpperCase() ?? "VIRTUAL CARD",
+                              style: GoogleFonts.inter(
+                                fontSize: isMobile ? 12 : 10,
                                 fontWeight: FontWeight.bold,
-                                fontSize: 18,
-                                color: account.type == 'credit_card' ? AppTheme.dangerRed : Colors.white,
+                                letterSpacing: 1.2,
+                                color: Colors.white70,
                               ),
-                        ),
-                        if (isBrokerage)
-                          Text(
-                            'Cash: ${dataService.formatAndConvert(account.currentBalance, account.currency)}',
-                            style: const TextStyle(fontSize: 10, color: AppTheme.textSecondary),
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
-                      ],
-                    ),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: typeColor.withOpacity(0.12),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: typeColor.withOpacity(0.4),
-                        width: 1.0,
-                      )
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          typeIcon,
-                          size: 11,
-                          color: typeColor,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          typeLabel,
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                            color: typeColor,
+                          const SizedBox(width: 8),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                account.name.toUpperCase(),
+                                style: GoogleFonts.outfit(
+                                  fontSize: isMobile ? 16 : 18,
+                                  fontWeight: FontWeight.w900,
+                                  fontStyle: FontStyle.italic,
+                                  color: typeColor.withOpacity(0.95),
+                                  letterSpacing: 1.0,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 4),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.08),
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(
+                                    color: Colors.white.withOpacity(0.12),
+                                    width: 0.8,
+                                  ),
+                                ),
+                                child: Text(
+                                  typeLabel,
+                                  style: GoogleFonts.inter(
+                                    fontSize: isMobile ? 11 : 10,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.white.withOpacity(0.9),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
-                        ),
-                      ],
-                    ),
+                        ],
+                      ),
+                      
+                      const Spacer(),
+
+                      // Bottom Row: Balance & limits left, settings dots button right
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  account.type == 'credit_card' ? 'Amount Owed' : 'Available Balance',
+                                  style: GoogleFonts.inter(
+                                    fontSize: isMobile ? 11 : 10,
+                                    color: Colors.white60,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.center,
+                                  children: [
+                                    Flexible(
+                                      child: Text(
+                                        dataService.formatAndConvert(totalVal, account.currency),
+                                        style: GoogleFonts.outfit(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: isMobile ? 21 : 22,
+                                          color: isLimitViolated
+                                              ? (account.type == 'credit_card' ? AppTheme.dangerRed : AppTheme.warningOrange)
+                                              : Colors.white,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                    if (isLimitViolated) ...[
+                                      const SizedBox(width: 6),
+                                      Icon(
+                                        Icons.warning_amber_rounded,
+                                        color: account.type == 'credit_card' ? AppTheme.dangerRed : AppTheme.warningOrange,
+                                        size: 16,
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                                if (account.type == 'credit_card' && account.limit > 0) ...[
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    (account.limit - totalVal) < 0
+                                        ? 'Rem: ${dataService.formatAndConvert(account.limit - totalVal, account.currency)} (Over Limit!)'
+                                        : 'Rem: ${dataService.formatAndConvert(account.limit - totalVal, account.currency)}',
+                                    style: GoogleFonts.inter(
+                                      fontSize: isMobile ? 11 : 10,
+                                      color: (account.limit - totalVal) < 0 ? AppTheme.dangerRed : AppTheme.successGreen,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ] else if ((account.type == 'checking' || account.type == 'savings') && account.limit > 0) ...[
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    totalVal < account.limit
+                                        ? 'Min: ${dataService.formatAndConvert(account.limit, account.currency)} (Below Limit!)'
+                                        : 'Min: ${dataService.formatAndConvert(account.limit, account.currency)}',
+                                    style: GoogleFonts.inter(
+                                      fontSize: isMobile ? 11 : 10,
+                                      color: totalVal < account.limit ? AppTheme.warningOrange : AppTheme.textSecondary,
+                                      fontWeight: totalVal < account.limit ? FontWeight.bold : FontWeight.normal,
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                          GestureDetector(
+                            onTap: () => _showManageAccountDialog(context, account, dataService, totalVal),
+                            child: Container(
+                              padding: EdgeInsets.all(isMobile ? 8 : 6),
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: Colors.white.withOpacity(0.05),
+                                border: Border.all(
+                                  color: Colors.white.withOpacity(0.1),
+                                  width: 0.8,
+                                ),
+                              ),
+                              child: Icon(
+                                Icons.more_vert,
+                                color: Colors.white.withOpacity(0.9),
+                                size: isMobile ? 16 : 14,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
-                ],
-              ),
-            ],
+                ),
+              ],
+            ),
           ),
         ),
       ),
     );
   }
 
+
   void _showManageAccountDialog(BuildContext context, Account account, DataService dataService, double totalVal) {
     final bool isActive = account.status == 'active';
     final bool isZero = totalVal.abs() < 0.005;
+
+    final nameController = TextEditingController(text: account.name);
+    final instController = TextEditingController(text: account.institution ?? '');
+    final limitController = TextEditingController(text: account.limit == 0.0 ? '' : account.limit.toString());
 
     showDialog(
       context: context,
       builder: (context) {
         return AlertDialog(
+          scrollable: true,
           backgroundColor: AppTheme.darkCard,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           title: Row(
@@ -378,92 +564,143 @@ class _AccountsPageState extends State<AccountsPage> {
               ),
             ],
           ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                'Select an action for this account. Note that deleting is permanent, whereas archiving keeps the historical records but hides the account.',
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-              const SizedBox(height: 24),
-              ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.accentCyan,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-                icon: const Icon(Icons.camera_alt_outlined),
-                label: const Text('Create Balance Snapshot'),
-                onPressed: () {
-                  Navigator.of(context).pop();
-                  _showCreateSnapshotConfirmation(context, account, dataService);
-                },
-              ),
-              const SizedBox(height: 12),
-              ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.primaryPurple,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-                icon: Icon(isActive ? Icons.archive : Icons.unarchive),
-                label: Text(isActive ? 'Archive Account (Recommended)' : 'Restore Account to Active'),
-                onPressed: () async {
-                  final updatedAccount = account.copyWith(
-                    status: isActive ? 'archived' : 'active',
-                    updatedAt: DateTime.now(),
-                  );
-                  await dataService.addAccount(updatedAccount);
-                  if (context.mounted) {
-                    Navigator.of(context).pop();
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(isActive 
-                          ? '${account.name} has been archived successfully.' 
-                          : '${account.name} is now active.'
-                        ),
+          content: SizedBox(
+            width: 400,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                  TextField(
+                    controller: nameController,
+                    decoration: const InputDecoration(labelText: 'Account Name'),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: instController,
+                    decoration: const InputDecoration(labelText: 'Institution'),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: limitController,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(
+                      labelText: 'Account Limit / Constraint',
+                      hintText: 'Credit limit or minimum balance (e.g. 500)',
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.mainAction,
+                      foregroundColor: Colors.black,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: const Text('Save Details', style: TextStyle(fontWeight: FontWeight.bold)),
+                    onPressed: () async {
+                      if (nameController.text.trim().isEmpty) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Please enter an account name.')),
+                        );
+                        return;
+                      }
+                      final double newLimit = double.tryParse(limitController.text) ?? 0.0;
+                      final updatedAccount = account.copyWith(
+                        name: nameController.text.trim(),
+                        institution: instController.text.trim().isEmpty ? null : instController.text.trim(),
+                        limit: newLimit,
+                        updatedAt: DateTime.now(),
+                      );
+                      await dataService.addAccount(updatedAccount);
+                      if (context.mounted) {
+                        Navigator.of(context).pop();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Account details updated successfully.')),
+                        );
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  const Divider(color: Color(0xFF2E2E4A)),
+                  const SizedBox(height: 12),
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.accentCyan,
+                      foregroundColor: Colors.black,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    icon: const Icon(Icons.camera_alt_outlined),
+                    label: const Text('Create Balance Snapshot'),
+                    onPressed: () {
+                      Navigator.of(context).pop();
+                      _showCreateSnapshotConfirmation(context, account, dataService);
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.primaryPurple,
+                      foregroundColor: Colors.black,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    icon: Icon(isActive ? Icons.archive : Icons.unarchive),
+                    label: Text(isActive ? 'Archive Account (Recommended)' : 'Restore Account to Active'),
+                    onPressed: () async {
+                      final updatedAccount = account.copyWith(
+                        status: isActive ? 'archived' : 'active',
+                        updatedAt: DateTime.now(),
+                      );
+                      await dataService.addAccount(updatedAccount);
+                      if (context.mounted) {
+                        Navigator.of(context).pop();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(isActive 
+                              ? '${account.name} has been archived successfully.' 
+                              : '${account.name} is now active.'
+                            ),
+                          ),
+                        );
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  const Divider(color: Color(0xFF2E2E4A)),
+                  const SizedBox(height: 12),
+                  if (!isZero) ...[
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppTheme.dangerRed.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: AppTheme.dangerRed.withOpacity(0.3)),
                       ),
-                    );
-                  }
-                },
+                      child: Text(
+                        'Delete Unavailable: Account total valuation is not zero (${dataService.formatAndConvert(totalVal, account.currency)}). You can only delete accounts with a zero balance. Please archive this account instead.',
+                        style: const TextStyle(fontSize: 12, color: AppTheme.dangerRed, height: 1.4),
+                      ),
+                    ),
+                  ] else ...[
+                    OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppTheme.dangerRed,
+                        side: const BorderSide(color: AppTheme.dangerRed),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      icon: const Icon(Icons.delete_forever),
+                      label: const Text('Permanently Delete Account'),
+                      onPressed: () {
+                        Navigator.of(context).pop();
+                        _showDeleteConfirmation1(context, account, dataService);
+                      },
+                    ),
+                  ],
+                ],
               ),
-              const SizedBox(height: 12),
-              const Divider(color: Color(0xFF2E2E4A)),
-              const SizedBox(height: 12),
-              if (!isZero) ...[
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: AppTheme.dangerRed.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: AppTheme.dangerRed.withOpacity(0.3)),
-                  ),
-                  child: Text(
-                    'Delete Unavailable: Account total valuation is not zero (${dataService.formatAndConvert(totalVal, account.currency)}). You can only delete accounts with a zero balance. Please archive this account instead.',
-                    style: const TextStyle(fontSize: 12, color: AppTheme.dangerRed, height: 1.4),
-                  ),
-                ),
-              ] else ...[
-                OutlinedButton.icon(
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppTheme.dangerRed,
-                    side: const BorderSide(color: AppTheme.dangerRed),
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                  icon: const Icon(Icons.delete_forever),
-                  label: const Text('Permanently Delete Account'),
-                  onPressed: () {
-                    Navigator.of(context).pop();
-                    _showDeleteConfirmation1(context, account, dataService);
-                  },
-                ),
-              ],
-            ],
-          ),
+            ),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
@@ -502,7 +739,7 @@ class _AccountsPageState extends State<AccountsPage> {
             ElevatedButton(
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppTheme.accentCyan,
-                foregroundColor: Colors.white,
+                foregroundColor: Colors.black,
               ),
               child: const Text('Create'),
               onPressed: () async {
@@ -674,6 +911,7 @@ class _AccountsPageState extends State<AccountsPage> {
       _nameController.clear();
       _institutionController.clear();
       _balanceController.clear();
+      _limitController.clear();
       _selectedType = 'checking';
       _selectedCurrency = 'MXN';
     });
@@ -684,49 +922,57 @@ class _AccountsPageState extends State<AccountsPage> {
         return StatefulBuilder(
           builder: (context, setDialogState) {
             return AlertDialog(
+              scrollable: true,
               backgroundColor: AppTheme.darkCard,
               title: Text('Register New Account', style: Theme.of(context).textTheme.titleLarge),
               content: SizedBox(
                 width: 400,
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      TextField(
-                        controller: _nameController,
-                        decoration: const InputDecoration(labelText: 'Account Name', hintText: 'Chase Sapphire / sweep cash'),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: _nameController,
+                      decoration: const InputDecoration(labelText: 'Account Name', hintText: 'Chase Sapphire / sweep cash'),
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: _institutionController,
+                      decoration: const InputDecoration(labelText: 'Institution', hintText: 'Chase / Binance'),
+                    ),
+                    const SizedBox(height: 16),
+                    DropdownButtonFormField<String>(
+                      value: _selectedType,
+                      decoration: const InputDecoration(labelText: 'Account Type'),
+                      items: ['checking', 'savings', 'credit_card', 'investment', 'crypto_wallet', 'retirement'].map((t) {
+                        return DropdownMenuItem(value: t, child: Text(t.toUpperCase()));
+                      }).toList(),
+                      onChanged: (val) => setDialogState(() => _selectedType = val!),
+                    ),
+                    const SizedBox(height: 16),
+                    DropdownButtonFormField<String>(
+                      value: _selectedCurrency,
+                      decoration: const InputDecoration(labelText: 'Account Currency'),
+                      items: ['MXN', 'USD', 'SOL', 'PEN'].map((c) {
+                        return DropdownMenuItem(value: c, child: Text(c));
+                      }).toList(),
+                      onChanged: (val) => setDialogState(() => _selectedCurrency = val!),
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: _balanceController,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      decoration: const InputDecoration(labelText: 'Opening Balance (Initial Transaction value)'),
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: _limitController,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      decoration: const InputDecoration(
+                        labelText: 'Account Limit / Constraint',
+                        hintText: 'Credit limit or minimum balance (e.g. 500)',
                       ),
-                      const SizedBox(height: 16),
-                      TextField(
-                        controller: _institutionController,
-                        decoration: const InputDecoration(labelText: 'Institution', hintText: 'Chase / Binance'),
-                      ),
-                      const SizedBox(height: 16),
-                      DropdownButtonFormField<String>(
-                        value: _selectedType,
-                        decoration: const InputDecoration(labelText: 'Account Type'),
-                        items: ['checking', 'savings', 'credit_card', 'investment', 'crypto_wallet', 'retirement'].map((t) {
-                          return DropdownMenuItem(value: t, child: Text(t.toUpperCase()));
-                        }).toList(),
-                        onChanged: (val) => setDialogState(() => _selectedType = val!),
-                      ),
-                      const SizedBox(height: 16),
-                      DropdownButtonFormField<String>(
-                        value: _selectedCurrency,
-                        decoration: const InputDecoration(labelText: 'Account Currency'),
-                        items: ['MXN', 'USD', 'SOL', 'PEN'].map((c) {
-                          return DropdownMenuItem(value: c, child: Text(c));
-                        }).toList(),
-                        onChanged: (val) => setDialogState(() => _selectedCurrency = val!),
-                      ),
-                      const SizedBox(height: 16),
-                      TextField(
-                        controller: _balanceController,
-                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                        decoration: const InputDecoration(labelText: 'Opening Balance (Initial Transaction value)'),
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
               actions: [
@@ -735,7 +981,10 @@ class _AccountsPageState extends State<AccountsPage> {
                   onPressed: () => Navigator.of(context).pop(),
                 ),
                 ElevatedButton(
-                  style: ElevatedButton.styleFrom(backgroundColor: AppTheme.mainAction),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.mainAction,
+                    foregroundColor: Colors.black,
+                  ),
                   child: const Text('Create'),
                   onPressed: () async {
                     if (_nameController.text.trim().isEmpty) {
@@ -746,6 +995,7 @@ class _AccountsPageState extends State<AccountsPage> {
                     }
 
                     final double initBalance = double.tryParse(_balanceController.text) ?? 0.0;
+                    final double limitVal = double.tryParse(_limitController.text) ?? 0.0;
                     final accId = _uuid.v4().substring(0, 20);
 
                     final newAcc = Account(
@@ -755,6 +1005,7 @@ class _AccountsPageState extends State<AccountsPage> {
                       type: _selectedType,
                       currency: _selectedCurrency,
                       currentBalance: 0.0,
+                      limit: limitVal,
                       createdAt: DateTime.now(),
                       updatedAt: DateTime.now(),
                     );
