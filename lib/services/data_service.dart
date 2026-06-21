@@ -10,6 +10,9 @@ import '../models/transaction.dart';
 import '../models/holding.dart';
 import '../models/asset_transaction.dart';
 import '../models/account_snapshot.dart';
+import '../models/asset.dart';
+import '../models/budget_target.dart';
+import '../models/recurring_transaction.dart';
 import '../core/config.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -22,9 +25,14 @@ class DataService extends ChangeNotifier {
   List<Transaction> transactions = [];
   List<Holding> holdings = [];
   List<AssetTransaction> assetTransactions = [];
+  List<Asset> assets = [];
+  List<BudgetTarget> budgetTargets = [];
+  List<RecurringTransaction> recurringTransactions = [];
 
-  DateTime transactionFilterDate = DateTime.now().subtract(const Duration(days: 60));
+  DateTime transactionFilterDate = DateTime(DateTime.now().year, DateTime.now().month, 1);
   StreamSubscription<List<Transaction>>? _transactionsSubscription;
+  StreamSubscription<List<BudgetTarget>>? _budgetTargetsSubscription;
+  StreamSubscription<List<RecurringTransaction>>? _recurringTransactionsSubscription;
 
   void setTransactionFilterDate(DateTime date) {
     transactionFilterDate = date;
@@ -35,9 +43,15 @@ class DataService extends ChangeNotifier {
     });
   }
 
+  List<String> enabledCurrencies = ['MXN', 'USD', 'SOL'];
+  StreamSubscription<List<String>>? _enabledCurrenciesSubscription;
+
   @override
   void dispose() {
     _transactionsSubscription?.cancel();
+    _enabledCurrenciesSubscription?.cancel();
+    _budgetTargetsSubscription?.cancel();
+    _recurringTransactionsSubscription?.cancel();
     super.dispose();
   }
 
@@ -58,8 +72,12 @@ class DataService extends ChangeNotifier {
     exchangeRates['MXN'] = val;
   }
 
-  String displayCurrency = 'USD'; // active display currency ('USD', 'MXN', 'SOL', etc.)
+  String displayCurrency = 'MXN'; // active display currency ('USD', 'MXN', 'SOL', etc.)
   Map<String, dynamic>? backupState;
+
+  Future<void> updateEnabledCurrencies(List<String> currencies) async {
+    await _firestore.saveEnabledCurrencies(currencies);
+  }
 
   DataService() {
     _initializeData();
@@ -69,13 +87,10 @@ class DataService extends ChangeNotifier {
     isLoading = true;
     notifyListeners();
 
-    // 1. Run database date migration to convert any String dates to native Firestore Timestamps
-    await _firestore.migrateDatabaseDates();
-
-    // 2. Start listening to Firestore streams
+    // 1. Start listening to Firestore streams
     _listenToFirestore();
 
-    // 3. Sync exchange rates and check/run backup tasks
+    // 2. Sync exchange rates and check/run backup tasks
     syncExchangeRates(); 
     checkAndRunDatabaseBackup(); 
   }
@@ -105,7 +120,7 @@ class DataService extends ChangeNotifier {
   }
 
   List<String> get availableDisplayCurrencies {
-    final set = {'USD', 'MXN', 'SOL'};
+    final set = Set<String>.from(enabledCurrencies.map((c) => c.toUpperCase()));
     for (var acc in accounts) {
       if (acc.status == 'active') {
         set.add(acc.currency.toUpperCase());
@@ -419,7 +434,7 @@ class DataService extends ChangeNotifier {
       notifyListeners();
     });
 
-    transactionFilterDate = DateTime.now().subtract(const Duration(days: 60));
+    transactionFilterDate = DateTime(DateTime.now().year, DateTime.now().month, 1);
     setTransactionFilterDate(transactionFilterDate);
 
     _firestore.streamHoldings().listen((data) {
@@ -432,8 +447,31 @@ class DataService extends ChangeNotifier {
       notifyListeners();
     });
 
+    _firestore.streamAssets().listen((data) {
+      assets = data;
+      notifyListeners();
+    });
+
     _firestore.streamAccountSnapshots().listen((data) {
       snapshots = data;
+      notifyListeners();
+    });
+
+    _enabledCurrenciesSubscription?.cancel();
+    _enabledCurrenciesSubscription = _firestore.streamEnabledCurrencies().listen((data) {
+      enabledCurrencies = data;
+      notifyListeners();
+    });
+
+    _budgetTargetsSubscription?.cancel();
+    _budgetTargetsSubscription = _firestore.streamBudgetTargets().listen((data) {
+      budgetTargets = data;
+      notifyListeners();
+    });
+
+    _recurringTransactionsSubscription?.cancel();
+    _recurringTransactionsSubscription = _firestore.streamRecurringTransactions().listen((data) {
+      recurringTransactions = data;
       notifyListeners();
     });
   }
@@ -451,6 +489,10 @@ class DataService extends ChangeNotifier {
 
   Future<void> addCategory(Category category) async {
     await _firestore.saveCategory(category);
+  }
+
+  Future<void> addBudgetTarget(BudgetTarget target) async {
+    await _firestore.saveBudgetTarget(target);
   }
 
   bool _shouldUpdateBalance(String accountId, DateTime transactionDate) {
@@ -563,9 +605,18 @@ class DataService extends ChangeNotifier {
   }
 
 
-  Future<void> addAssetTransaction(AssetTransaction assetTx, {double? cashImpactAmount}) async {
+  Future<void> addAssetTransaction(AssetTransaction assetTx, {double? cashImpactAmount, String? assetType}) async {
     // Write asset transaction execution log
     await _firestore.saveAssetTransaction(assetTx);
+
+    // If asset doesn't exist in our list, create it
+    final exists = assets.any((a) => a.id == assetTx.assetId);
+    if (!exists) {
+      final symbol = assetTx.assetSymbol ?? assetTx.assetId;
+      final name = assetTx.assetName ?? symbol;
+      final type = assetType ?? 'stock';
+      await _firestore.saveAsset(Asset(id: assetTx.assetId, symbol: symbol, name: name, type: type));
+    }
 
     // Recalculate holding inventory
     _recalculateHolding(assetTx);
@@ -624,6 +675,14 @@ class DataService extends ChangeNotifier {
       updatedAt: DateTime.now(),
     );
     await _firestore.saveAccount(updatedAccount);
+  }
+
+  Future<void> saveRecurringTransaction(RecurringTransaction rt) async {
+    await _firestore.saveRecurringTransaction(rt);
+  }
+
+  Future<void> deleteRecurringTransaction(String id) async {
+    await _firestore.deleteRecurringTransaction(id);
   }
 
   // --- CALCULATION HELPER FUNCTIONS ---

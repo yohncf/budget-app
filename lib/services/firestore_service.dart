@@ -5,6 +5,9 @@ import '../models/transaction.dart';
 import '../models/holding.dart';
 import '../models/asset_transaction.dart';
 import '../models/account_snapshot.dart';
+import '../models/asset.dart';
+import '../models/budget_target.dart';
+import '../models/recurring_transaction.dart';
 
 class FirestoreService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
@@ -82,6 +85,21 @@ class FirestoreService {
     await _db.collection('holdings').doc(holding.id).set(holding.toJson());
   }
 
+  // --- ASSETS ---
+  Stream<List<Asset>> streamAssets() {
+    return _db.collection('assets').snapshots().map((snapshot) {
+      return snapshot.docs.map((doc) {
+        final data = doc.data();
+        data['id'] = doc.id;
+        return Asset.fromJson(data);
+      }).toList();
+    });
+  }
+
+  Future<void> saveAsset(Asset asset) async {
+    await _db.collection('assets').doc(asset.id).set(asset.toJson());
+  }
+
   // --- ASSET TRANSACTIONS ---
   Stream<List<AssetTransaction>> streamAssetTransactions() {
     return _db.collection('asset_transactions').orderBy('executed_at', descending: true).snapshots().map((snapshot) {
@@ -109,6 +127,25 @@ class FirestoreService {
 
   Future<void> saveExchangeRateConfig(Map<String, dynamic> data) async {
     await _db.collection('config').doc('currency_rates').set(data);
+  }
+
+  // --- ENABLED CURRENCIES ---
+  Stream<List<String>> streamEnabledCurrencies() {
+    return _db.collection('config').doc('currency_preferences').snapshots().map((snapshot) {
+      if (snapshot.exists && snapshot.data() != null) {
+        final data = snapshot.data()!;
+        if (data['enabled_currencies'] != null) {
+          return List<String>.from(data['enabled_currencies']);
+        }
+      }
+      return ['MXN', 'USD', 'SOL'];
+    });
+  }
+
+  Future<void> saveEnabledCurrencies(List<String> currencies) async {
+    await _db.collection('config').doc('currency_preferences').set({
+      'enabled_currencies': currencies,
+    });
   }
 
   // --- DATABASE DATE TYPE MIGRATION ---
@@ -223,6 +260,40 @@ class FirestoreService {
 
   Future<void> saveAccountSnapshot(AccountSnapshot snapshot) async {
     await _db.collection('account_snapshots').doc(snapshot.id).set(snapshot.toJson());
+  }
+
+  // --- BUDGET TARGETS ---
+  Stream<List<BudgetTarget>> streamBudgetTargets() {
+    return _db.collection('budget_targets').snapshots().map((snapshot) {
+      return snapshot.docs.map((doc) {
+        final data = doc.data();
+        data['id'] = doc.id;
+        return BudgetTarget.fromJson(data);
+      }).toList();
+    });
+  }
+
+  Future<void> saveBudgetTarget(BudgetTarget target) async {
+    await _db.collection('budget_targets').doc(target.id).set(target.toJson());
+  }
+
+  // --- RECURRING TRANSACTIONS ---
+  Stream<List<RecurringTransaction>> streamRecurringTransactions() {
+    return _db.collection('recurring_transactions').snapshots().map((snapshot) {
+      return snapshot.docs.map((doc) {
+        final data = doc.data();
+        data['id'] = doc.id;
+        return RecurringTransaction.fromJson(data);
+      }).toList();
+    });
+  }
+
+  Future<void> saveRecurringTransaction(RecurringTransaction rt) async {
+    await _db.collection('recurring_transactions').doc(rt.id).set(rt.toJson());
+  }
+
+  Future<void> deleteRecurringTransaction(String id) async {
+    await _db.collection('recurring_transactions').doc(id).delete();
   }
 }
 

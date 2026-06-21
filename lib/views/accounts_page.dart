@@ -952,7 +952,13 @@ class _AccountsPageState extends State<AccountsPage> {
                     DropdownButtonFormField<String>(
                       value: _selectedCurrency,
                       decoration: const InputDecoration(labelText: 'Account Currency'),
-                      items: ['MXN', 'USD', 'SOL', 'PEN'].map((c) {
+                      items: (() {
+                        final list = List<String>.from(dataService.availableDisplayCurrencies);
+                        if (!list.contains(_selectedCurrency)) {
+                          list.add(_selectedCurrency);
+                        }
+                        return list;
+                      })().map((c) {
                         return DropdownMenuItem(value: c, child: Text(c));
                       }).toList(),
                       onChanged: (val) => setDialogState(() => _selectedCurrency = val!),

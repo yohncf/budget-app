@@ -5,10 +5,45 @@ import '../services/data_service.dart';
 import '../core/theme.dart';
 import '../models/account.dart';
 import '../models/category.dart';
+import '../models/budget_target.dart';
+import '../models/recurring_transaction.dart';
 import 'package:intl/intl.dart';
 
-class DashboardPage extends StatelessWidget {
+class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
+
+  @override
+  State<DashboardPage> createState() => _DashboardPageState();
+}
+
+class _DashboardPageState extends State<DashboardPage> {
+  late DateTime _selectedMonth;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedMonth = DateTime(DateTime.now().year, DateTime.now().month);
+  }
+
+  List<DateTime> _getAvailableMonths() {
+    final now = DateTime.now();
+    final List<DateTime> months = [];
+    for (int i = 0; i < 12; i++) {
+      months.add(DateTime(now.year, now.month - i, 1));
+    }
+    return months;
+  }
+
+  void _onMonthChanged(DateTime? newMonth, DataService service) {
+    if (newMonth == null) return;
+    setState(() {
+      _selectedMonth = newMonth;
+    });
+
+    if (newMonth.isBefore(service.transactionFilterDate)) {
+      service.setTransactionFilterDate(newMonth);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -26,15 +61,18 @@ class DashboardPage extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // Top header bar
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Column(
+                LayoutBuilder(
+                  builder: (context, headerConstraints) {
+                    final isNarrow = headerConstraints.maxWidth < 600;
+
+                    final headerText = Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
                           'Personal Wealth Ledger',
-                          style: Theme.of(context).textTheme.displayLarge?.copyWith(fontSize: 28),
+                          style: Theme.of(context).textTheme.displayLarge?.copyWith(
+                                fontSize: isNarrow ? 24 : 28,
+                              ),
                         ),
                         const SizedBox(height: 4),
                         Text(
@@ -42,8 +80,9 @@ class DashboardPage extends StatelessWidget {
                           style: Theme.of(context).textTheme.bodyMedium,
                         ),
                       ],
-                    ),
-                    Consumer<DataService>(
+                    );
+
+                    final syncStatus = Consumer<DataService>(
                       builder: (context, ds, child) {
                         final state = ds.backupState;
                         String text = 'Sync: Checking...';
@@ -115,46 +154,61 @@ class DashboardPage extends StatelessWidget {
                           ),
                         );
                       },
-                    ),
-                  ],
+                    );
+
+                    if (isNarrow) {
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          headerText,
+                          const SizedBox(height: 12),
+                          syncStatus,
+                        ],
+                      );
+                    }
+
+                    return Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(child: headerText),
+                        const SizedBox(width: 16),
+                        syncStatus,
+                      ],
+                    );
+                  },
                 ),
                 const SizedBox(height: 32),
 
                 // Main Layout Grid
                 LayoutBuilder(
                   builder: (context, constraints) {
-                    final isDesktop = constraints.maxWidth > 800;
-
-                    return isDesktop
-                        ? Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Expanded(
-                                flex: 3,
-                                child: Column(
-                                  children: [
-                                    _buildNetWorthCard(context, dataService),
-                                    const SizedBox(height: 24),
-                                    _buildChartsSection(context, dataService),
-                                  ],
-                                ),
+                    final isWide = constraints.maxWidth >= 900;
+                    return Column(
+                      children: [
+                        _buildIncomeVsExpensesChart(context, dataService),
+                        const SizedBox(height: 24),
+                        isWide
+                            ? Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Expanded(child: _buildBudgetsSection(context, dataService)),
+                                  const SizedBox(width: 24),
+                                  Expanded(child: _buildRecurringTransactionsSection(context, dataService)),
+                                ],
+                              )
+                            : Column(
+                                children: [
+                                  _buildBudgetsSection(context, dataService),
+                                  const SizedBox(height: 24),
+                                  _buildRecurringTransactionsSection(context, dataService),
+                                ],
                               ),
-                              const SizedBox(width: 24),
-                              Expanded(
-                                flex: 2,
-                                child: _buildAccountsSection(context, dataService),
-                              ),
-                            ],
-                          )
-                        : Column(
-                            children: [
-                              _buildNetWorthCard(context, dataService),
-                              const SizedBox(height: 24),
-                              _buildAccountsSection(context, dataService),
-                              const SizedBox(height: 24),
-                              _buildChartsSection(context, dataService),
-                            ],
-                          );
+                        const SizedBox(height: 24),
+                        _buildChartsSection(context, dataService),
+                        const SizedBox(height: 24),
+                        _buildNetWorthCard(context, dataService),
+                      ],
+                    );
                   },
                 ),
               ],
@@ -220,11 +274,122 @@ class DashboardPage extends StatelessWidget {
     );
   }
 
+  Widget _buildMonthSelector(BuildContext context, DataService service) {
+    final months = _getAvailableMonths();
+    final formattedSelected = DateFormat('MMMM yyyy').format(_selectedMonth);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFF1D1D22),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFF23232A)),
+      ),
+      child: PopupMenuButton<DateTime>(
+        initialValue: _selectedMonth,
+        tooltip: 'Change month',
+        onSelected: (date) => _onMonthChanged(date, service),
+        color: AppTheme.darkCard,
+        itemBuilder: (context) {
+          return months.map((m) {
+            final label = DateFormat('MMMM yyyy').format(m);
+            final isSelected = m.year == _selectedMonth.year && m.month == _selectedMonth.month;
+            return PopupMenuItem<DateTime>(
+              value: m,
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                  color: isSelected ? AppTheme.mainAction : Colors.white,
+                ),
+              ),
+            );
+          }).toList();
+        },
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10.0),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(
+                Icons.calendar_today_outlined,
+                size: 14,
+                color: AppTheme.textSecondary,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                formattedSelected,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                  color: AppTheme.mainAction,
+                ),
+              ),
+              const SizedBox(width: 4),
+              const Icon(
+                Icons.arrow_drop_down,
+                size: 16,
+                color: AppTheme.textSecondary,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildChartsSection(BuildContext context, DataService service) {
+    Color parseColor(String colorHex) {
+      try {
+        return Color(int.parse(colorHex.replaceFirst('#', '0xFF')));
+      } catch (_) {
+        return AppTheme.mainAction;
+      }
+    }
+
+    IconData getCategoryIcon(String? iconName) {
+      switch (iconName?.toLowerCase()) {
+        case 'shopping':
+        case 'shopping_bag':
+          return Icons.shopping_bag_outlined;
+        case 'food':
+        case 'dining':
+        case 'restaurant':
+          return Icons.restaurant_outlined;
+        case 'groceries':
+          return Icons.local_grocery_store_outlined;
+        case 'health':
+        case 'medical':
+          return Icons.medical_services_outlined;
+        case 'travel':
+        case 'flight':
+          return Icons.flight_takeoff_outlined;
+        case 'transport':
+        case 'taxi':
+        case 'car':
+          return Icons.directions_car_outlined;
+        case 'entertainment':
+        case 'movie':
+          return Icons.movie_outlined;
+        case 'utilities':
+        case 'bill':
+          return Icons.receipt_long_outlined;
+        case 'education':
+          return Icons.school_outlined;
+        default:
+          return Icons.category_outlined;
+      }
+    }
+
     // Generate simple charts based on transaction categories
-    final Map<String, double> categorySummaries = {};
+    final Map<Category, double> categorySummaries = {};
+    double totalOutflow = 0.0;
+
     for (var tx in service.transactions) {
       if (tx.status == 'deleted') continue;
+      if (tx.date.year != _selectedMonth.year || tx.date.month != _selectedMonth.month) {
+        continue;
+      }
       if (tx.amount < 0) {
         Category? cat;
         for (var c in service.categories) {
@@ -233,41 +398,45 @@ class DashboardPage extends StatelessWidget {
             break;
           }
         }
-        cat ??= Category(id: '', name: 'Miscellaneous', type: 'expense', createdAt: DateTime.now());
-        // Exclude internal transfers from charts as per Rule 2.4
-        if (cat.type != 'transfer') {
-          // Convert amount to display currency first
-          final amountInDisplay = service.convertToDisplay(tx.amount.abs(), tx.currency);
-          categorySummaries[cat.name] = (categorySummaries[cat.name] ?? 0) + amountInDisplay;
+        cat ??= Category(id: '', name: 'Miscellaneous', type: 'expense', colorHex: '#9CA3AF', createdAt: DateTime.now());
+        
+        final amountInDisplay = service.convertToDisplay(tx.amount.abs(), tx.currency);
+        
+        Category? existingKey;
+        for (var key in categorySummaries.keys) {
+          if (key.id == cat.id || (key.id.isEmpty && cat.id.isEmpty && key.name == cat.name)) {
+            existingKey = key;
+            break;
+          }
         }
+        if (existingKey != null) {
+          categorySummaries[existingKey] = categorySummaries[existingKey]! + amountInDisplay;
+        } else {
+          categorySummaries[cat] = amountInDisplay;
+        }
+        totalOutflow += amountInDisplay;
       }
     }
 
-    final List<PieChartSectionData> chartSections = [];
-    int index = 0;
-    final colors = [
-      AppTheme.mainAction,
-      AppTheme.secondaryColor,
-      AppTheme.successGreen,
-      AppTheme.warningOrange,
-      AppTheme.dangerRed,
-      Colors.pink,
-      Colors.blue,
-    ];
+    final sortedEntries = categorySummaries.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
 
-    categorySummaries.forEach((catName, sum) {
-      final color = colors[index % colors.length];
+    final List<PieChartSectionData> chartSections = [];
+    for (var entry in sortedEntries) {
+      final cat = entry.key;
+      final sum = entry.value;
+      final color = parseColor(cat.colorHex);
+      
       chartSections.add(
         PieChartSectionData(
           color: color,
           value: sum,
-          title: service.formatCurrency(sum),
-          radius: 50,
-          titleStyle: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white),
+          title: '', 
+          radius: 16, 
+          showTitle: false,
         ),
       );
-      index++;
-    });
+    }
 
     return Card(
       child: Padding(
@@ -275,73 +444,237 @@ class DashboardPage extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'Monthly Outflow Breakdown',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Excludes internal transfers (Rule 2.4)',
-              style: Theme.of(context).textTheme.bodyMedium,
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Monthly Outflow Breakdown',
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Excludes internal transfers (Rule 2.4)',
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 16),
+                _buildMonthSelector(context, service),
+              ],
             ),
             const SizedBox(height: 32),
             if (chartSections.isEmpty)
               const Center(
                 child: Padding(
                   padding: EdgeInsets.symmetric(vertical: 40.0),
-                  child: Text('No expense transactions recorded yet.'),
+                  child: Text('No expense transactions recorded for this month.'),
                 ),
               )
-            else
-              Row(
-                children: [
-                  Expanded(
-                    child: SizedBox(
-                      height: 180,
-                      child: PieChart(
-                        PieChartData(
-                          sections: chartSections,
-                          sectionsSpace: 4,
-                          centerSpaceRadius: 40,
+            else ...[
+              // Donut Chart + Legend Row
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final isMobile = constraints.maxWidth < 600;
+                  
+                  final donutChart = Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      SizedBox(
+                        height: 180,
+                        width: 180,
+                        child: PieChart(
+                          PieChartData(
+                            sections: chartSections,
+                            sectionsSpace: 3,
+                            centerSpaceRadius: 60,
+                          ),
                         ),
                       ),
-                    ),
+                      Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            service.formatCurrency(totalOutflow),
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          const Text(
+                            'Total',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: AppTheme.textSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  );
+
+                  final legendList = Wrap(
+                    spacing: 12,
+                    runSpacing: 8,
+                    children: sortedEntries.map((entry) {
+                      final cat = entry.key;
+                      final color = parseColor(cat.colorHex);
+                      return Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 10,
+                            height: 10,
+                            decoration: BoxDecoration(
+                              color: color,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            cat.name,
+                            style: const TextStyle(
+                              color: AppTheme.textSecondary,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      );
+                    }).toList(),
+                  );
+
+                  if (isMobile) {
+                    return Column(
+                      children: [
+                        Center(child: donutChart),
+                        const SizedBox(height: 24),
+                        Center(child: legendList),
+                      ],
+                    );
+                  }
+
+                  return Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Spacer(),
+                      donutChart,
+                      const SizedBox(width: 48),
+                      Expanded(
+                        flex: 3,
+                        child: legendList,
+                      ),
+                      const Spacer(),
+                    ],
+                  );
+                },
+              ),
+              const SizedBox(height: 32),
+              const Divider(color: Color(0xFF23232A)),
+              const SizedBox(height: 16),
+              
+              // Category Card List (looking exactly like the user's uploaded mock)
+              ...sortedEntries.map((entry) {
+                final cat = entry.key;
+                final sum = entry.value;
+                final percent = totalOutflow > 0 ? (sum / totalOutflow) * 100 : 0.0;
+                final color = parseColor(cat.colorHex);
+                final iconData = getCategoryIcon(cat.icon);
+
+                // Determine if over budget for the trend arrow (up-red / down-green)
+                bool isOverBudget = false;
+                BudgetTarget? target;
+                for (var t in service.budgetTargets) {
+                  if (t.categoryId == cat.id) {
+                    target = t;
+                    break;
+                  }
+                }
+                if (target != null && sum > target.targetAmount) {
+                  isOverBudget = true;
+                }
+
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF141417),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: const Color(0xFF23232A)),
                   ),
-                  const SizedBox(width: 24),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: categorySummaries.keys.map((catName) {
-                        final idx = categorySummaries.keys.toList().indexOf(catName);
-                        final color = colors[idx % colors.length];
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 4.0),
-                          child: Row(
+                  child: Row(
+                    children: [
+                      // Circular colored category icon container
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: color.withOpacity(0.12),
+                          shape: BoxShape.circle,
+                          border: Border.all(color: color.withOpacity(0.3), width: 1),
+                        ),
+                        child: Icon(
+                          iconData,
+                          color: color,
+                          size: 20,
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      // Category Name
+                      Expanded(
+                        child: Text(
+                          cat.name,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 15,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                      // Amount & Outflow Percentage Trend
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(
+                            service.formatCurrency(sum),
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 15,
+                              color: Colors.white,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
                             children: [
-                              Container(
-                                width: 12,
-                                height: 12,
-                                decoration: BoxDecoration(
-                                  color: color,
-                                  shape: BoxShape.circle,
+                              Text(
+                                '${percent.toStringAsFixed(0)}%',
+                                style: const TextStyle(
+                                  color: AppTheme.textSecondary,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
                                 ),
                               ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  catName,
-                                  style: Theme.of(context).textTheme.bodyLarge,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
+                              const SizedBox(width: 4),
+                              Icon(
+                                isOverBudget ? Icons.arrow_upward : Icons.arrow_downward,
+                                color: isOverBudget ? AppTheme.dangerRed : AppTheme.successGreen,
+                                size: 12,
                               ),
                             ],
                           ),
-                        );
-                      }).toList(),
-                    ),
+                        ],
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                );
+              }).toList(),
+            ],
           ],
         ),
       ),
@@ -472,6 +805,602 @@ class DashboardPage extends StatelessWidget {
             ],
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildIncomeVsExpensesChart(BuildContext context, DataService service) {
+    final daysInMonth = DateTime(_selectedMonth.year, _selectedMonth.month + 1, 0).day;
+    final Map<int, double> dailyIncomeMap = {};
+    final Map<int, double> dailyExpenseMap = {};
+    for (int i = 1; i <= daysInMonth; i++) {
+      dailyIncomeMap[i] = 0.0;
+      dailyExpenseMap[i] = 0.0;
+    }
+
+    double totalIncome = 0.0;
+    double totalExpenses = 0.0;
+    
+    for (var tx in service.transactions) {
+      if (tx.status == 'deleted') continue;
+      if (tx.date.year != _selectedMonth.year || tx.date.month != _selectedMonth.month) {
+        continue;
+      }
+      final cat = service.categories.firstWhere((c) => c.id == tx.categoryId,
+          orElse: () => Category(id: '', name: 'Unknown', type: 'expense', createdAt: DateTime.now()));
+      if (cat.type == 'transfer' && tx.amount > 0) continue;
+      
+      final amountInDisplay = service.convertToDisplay(tx.amount, tx.currency);
+      final day = tx.date.day;
+      if (amountInDisplay > 0) {
+        dailyIncomeMap[day] = (dailyIncomeMap[day] ?? 0.0) + amountInDisplay;
+        totalIncome += amountInDisplay;
+      } else {
+        dailyExpenseMap[day] = (dailyExpenseMap[day] ?? 0.0) + amountInDisplay.abs();
+        totalExpenses += amountInDisplay.abs();
+      }
+    }
+
+    final List<FlSpot> incomeSpots = [];
+    final List<FlSpot> expenseSpots = [];
+    double cumulativeIncome = 0.0;
+    double cumulativeExpense = 0.0;
+    double maxCumulativeVal = 0.0;
+    
+    for (int d = 1; d <= daysInMonth; d++) {
+      cumulativeIncome += dailyIncomeMap[d] ?? 0.0;
+      cumulativeExpense += dailyExpenseMap[d] ?? 0.0;
+      incomeSpots.add(FlSpot(d.toDouble(), cumulativeIncome));
+      expenseSpots.add(FlSpot(d.toDouble(), cumulativeExpense));
+      if (cumulativeIncome > maxCumulativeVal) maxCumulativeVal = cumulativeIncome;
+      if (cumulativeExpense > maxCumulativeVal) maxCumulativeVal = cumulativeExpense;
+    }
+
+    final chartMaxY = maxCumulativeVal > 0 ? maxCumulativeVal * 1.15 : 1000.0;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Income vs Expenses',
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Cumulative comparison for ${DateFormat('MMMM yyyy').format(_selectedMonth)}',
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 16),
+                _buildMonthSelector(context, service),
+              ],
+            ),
+            const SizedBox(height: 24),
+            Row(
+              children: [
+                _buildLegendItem('Income', AppTheme.mainAction),
+                const SizedBox(width: 16),
+                _buildLegendItem('Expenses', AppTheme.dangerRed),
+              ],
+            ),
+            const SizedBox(height: 24),
+            SizedBox(
+              height: 220,
+              child: LineChart(
+                LineChartData(
+                  minX: 1,
+                  maxX: daysInMonth.toDouble(),
+                  minY: 0,
+                  maxY: chartMaxY,
+                  gridData: FlGridData(
+                    show: true,
+                    drawHorizontalLine: true,
+                    drawVerticalLine: true,
+                    horizontalInterval: chartMaxY / 5 > 0 ? chartMaxY / 5 : 200,
+                    verticalInterval: 5,
+                    getDrawingHorizontalLine: (value) {
+                      return const FlLine(
+                        color: Color(0xFF23232A),
+                        strokeWidth: 1,
+                      );
+                    },
+                    getDrawingVerticalLine: (value) {
+                      return const FlLine(
+                        color: Color(0xFF23232A),
+                        strokeWidth: 1,
+                      );
+                    },
+                  ),
+                  borderData: FlBorderData(
+                    show: true,
+                    border: Border.all(color: const Color(0xFF23232A)),
+                  ),
+                  titlesData: FlTitlesData(
+                    show: true,
+                    bottomTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        reservedSize: 30,
+                        interval: 5,
+                        getTitlesWidget: (double value, TitleMeta meta) {
+                          final dayVal = value.toInt();
+                          if (dayVal >= 1 && dayVal <= daysInMonth) {
+                            return SideTitleWidget(
+                              meta: meta,
+                              child: Text('$dayVal', style: const TextStyle(color: AppTheme.textSecondary, fontSize: 10)),
+                            );
+                          }
+                          return const SizedBox.shrink();
+                        },
+                      ),
+                    ),
+                    leftTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false),
+                    ),
+                    topTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false),
+                    ),
+                    rightTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false),
+                    ),
+                  ),
+                  lineTouchData: LineTouchData(
+                    touchTooltipData: LineTouchTooltipData(
+                      getTooltipColor: (_) => AppTheme.darkCard,
+                      getTooltipItems: (touchedSpots) {
+                        return touchedSpots.map((spot) {
+                          final isIncomeLine = spot.barIndex == 0;
+                          final title = isIncomeLine ? 'Cumulative Income' : 'Cumulative Expense';
+                          final color = isIncomeLine ? AppTheme.mainAction : AppTheme.dangerRed;
+                          return LineTooltipItem(
+                            'Day ${spot.x.toInt()}: $title ${service.formatCurrency(spot.y)}',
+                            TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 12),
+                          );
+                        }).toList();
+                      },
+                    ),
+                  ),
+                  lineBarsData: [
+                    LineChartBarData(
+                      spots: incomeSpots,
+                      isCurved: true,
+                      color: AppTheme.mainAction,
+                      barWidth: 3,
+                      isStrokeCapRound: true,
+                      dotData: const FlDotData(show: false),
+                      belowBarData: BarAreaData(
+                        show: true,
+                        color: AppTheme.mainAction.withOpacity(0.08),
+                      ),
+                    ),
+                    LineChartBarData(
+                      spots: expenseSpots,
+                      isCurved: true,
+                      color: AppTheme.dangerRed,
+                      barWidth: 3,
+                      isStrokeCapRound: true,
+                      dotData: const FlDotData(show: false),
+                      belowBarData: BarAreaData(
+                        show: true,
+                        color: AppTheme.dangerRed.withOpacity(0.08),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                Column(
+                  children: [
+                    const Text('Total Income', style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
+                    const SizedBox(height: 4),
+                    Text(
+                      service.formatCurrency(totalIncome),
+                      style: const TextStyle(color: AppTheme.mainAction, fontWeight: FontWeight.bold, fontSize: 16),
+                    ),
+                  ],
+                ),
+                Column(
+                  children: [
+                    const Text('Total Expenses', style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
+                    const SizedBox(height: 4),
+                    Text(
+                      service.formatCurrency(totalExpenses),
+                      style: const TextStyle(color: AppTheme.dangerRed, fontWeight: FontWeight.bold, fontSize: 16),
+                    ),
+                  ],
+                ),
+                Column(
+                  children: [
+                    const Text('Net Cash Flow', style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
+                    const SizedBox(height: 4),
+                    Text(
+                      service.formatCurrency(totalIncome - totalExpenses),
+                      style: TextStyle(
+                        color: (totalIncome - totalExpenses) >= 0 ? AppTheme.successGreen : AppTheme.dangerRed,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLegendItem(String title, Color color) {
+    return Row(
+      children: [
+        Container(
+          width: 12,
+          height: 12,
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Text(title, style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
+      ],
+    );
+  }
+
+  Widget _buildBudgetsSection(BuildContext context, DataService service) {
+    final expenseCategories = service.categories.where((c) => c.type == 'expense').toList();
+
+    final Map<String, double> categorySpending = {};
+    for (var tx in service.transactions) {
+      if (tx.status == 'deleted') continue;
+      if (tx.date.year != _selectedMonth.year || tx.date.month != _selectedMonth.month) {
+        continue;
+      }
+      final cat = service.categories.firstWhere((c) => c.id == tx.categoryId,
+          orElse: () => Category(id: '', name: 'Unknown', type: 'expense', createdAt: DateTime.now()));
+      if (cat.type == 'expense') {
+        final amountInDisplay = service.convertToDisplay(tx.amount.abs(), tx.currency);
+        categorySpending[cat.id] = (categorySpending[cat.id] ?? 0) + amountInDisplay;
+      }
+    }
+
+    final Map<String, double> categoryBudgets = {};
+    for (BudgetTarget target in service.budgetTargets) {
+      final startLimit = DateTime(_selectedMonth.year, _selectedMonth.month, 1);
+      final endLimit = DateTime(_selectedMonth.year, _selectedMonth.month + 1, 1).subtract(const Duration(days: 1));
+      
+      final targetStart = DateTime(target.startDate.year, target.startDate.month, target.startDate.day);
+      final targetEnd = DateTime(target.endDate.year, target.endDate.month, target.endDate.day);
+
+      if (!targetStart.isAfter(endLimit) && !targetEnd.isBefore(startLimit)) {
+        categoryBudgets[target.categoryId] = target.targetAmount;
+      }
+    }
+
+    final List<Map<String, dynamic>> budgetList = [];
+    for (var cat in expenseCategories) {
+      final spent = categorySpending[cat.id] ?? 0.0;
+      final budget = categoryBudgets[cat.id];
+      if (budget != null) {
+        budgetList.add({
+          'category': cat,
+          'spent': spent,
+          'budget': budget,
+        });
+      }
+    }
+
+    budgetList.sort((a, b) {
+      final aOver = a['budget'] != null && a['spent'] > a['budget'];
+      final bOver = b['budget'] != null && b['spent'] > b['budget'];
+      if (aOver && !bOver) return -1;
+      if (!aOver && bOver) return 1;
+      return (b['spent'] as double).compareTo(a['spent'] as double);
+    });
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Category Budgets',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                Text(
+                  'Selected Month: ${DateFormat('MMMM yyyy').format(_selectedMonth)}',
+                  style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            if (budgetList.isEmpty)
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(vertical: 40.0),
+                  child: Text('No spending or budget targets set for this month.'),
+                ),
+              )
+            else
+              ListView.separated(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: budgetList.length,
+                separatorBuilder: (context, index) => const SizedBox(height: 16),
+                itemBuilder: (context, index) {
+                  final item = budgetList[index];
+                  final Category cat = item['category'];
+                  final double spent = item['spent'];
+                  final double? budget = item['budget'];
+
+                  final percent = budget != null && budget > 0 ? (spent / budget) : 0.0;
+                  final isOver = budget != null && spent > budget;
+                  
+                  Color progressColor = AppTheme.mainAction;
+                  if (budget != null) {
+                    if (isOver) {
+                      progressColor = AppTheme.dangerRed;
+                    } else if (percent > 0.8) {
+                      progressColor = AppTheme.warningOrange;
+                    } else {
+                      progressColor = AppTheme.successGreen;
+                    }
+                  }
+
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                width: 8,
+                                height: 8,
+                                decoration: BoxDecoration(
+                                  color: Color(int.parse(cat.colorHex.replaceFirst('#', '0xFF'))),
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                cat.name,
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                              ),
+                            ],
+                          ),
+                          Row(
+                            children: [
+                              Text(
+                                service.formatCurrency(spent),
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                              ),
+                              if (budget != null) ...[
+                                const Text(' / ', style: TextStyle(color: AppTheme.textSecondary, fontSize: 11)),
+                                Text(
+                                  service.formatCurrency(budget),
+                                  style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      if (budget != null) ...[
+                        Stack(
+                          children: [
+                            Container(
+                              height: 8,
+                              width: double.infinity,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF1D1D22),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                            ),
+                            FractionallySizedBox(
+                              widthFactor: percent.clamp(0.0, 1.0),
+                              child: Container(
+                                height: 8,
+                                decoration: BoxDecoration(
+                                  color: progressColor,
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              '${(percent * 100).toStringAsFixed(0)}% used',
+                              style: TextStyle(color: isOver ? AppTheme.dangerRed : AppTheme.textSecondary, fontSize: 11),
+                            ),
+                            if (isOver)
+                              Text(
+                                'Over by ${service.formatCurrency(spent - budget)}',
+                                style: const TextStyle(color: AppTheme.dangerRed, fontSize: 11, fontWeight: FontWeight.bold),
+                              )
+                            else
+                              Text(
+                                'Remaining: ${service.formatCurrency(budget - spent)}',
+                                style: const TextStyle(color: AppTheme.successGreen, fontSize: 11),
+                              ),
+                          ],
+                        ),
+                      ] else ...[
+                        const Text(
+                          'No budget limit set',
+                          style: TextStyle(color: AppTheme.textSecondary, fontSize: 11, fontStyle: FontStyle.italic),
+                        ),
+                      ],
+                    ],
+                  );
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRecurringTransactionsSection(BuildContext context, DataService service) {
+    final startOfMonth = DateTime(_selectedMonth.year, _selectedMonth.month, 1);
+    final endOfMonth = DateTime(_selectedMonth.year, _selectedMonth.month + 1, 1).subtract(const Duration(days: 1));
+
+    final recurringThisMonth = service.recurringTransactions.where((rt) {
+      if (rt.status != 'active') return false;
+      if (rt.endDate != null && rt.endDate!.isBefore(startOfMonth)) return false;
+      if (rt.startDate.isAfter(endOfMonth)) return false;
+
+      final due = rt.nextDueDate;
+      if (due.isBefore(endOfMonth) || (due.year == _selectedMonth.year && due.month == _selectedMonth.month)) {
+        return true;
+      }
+      return false;
+    }).toList();
+
+    recurringThisMonth.sort((a, b) => a.nextDueDate.compareTo(b.nextDueDate));
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Recurring Transactions',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                Text(
+                  'Month: ${DateFormat('MMMM yyyy').format(_selectedMonth)}',
+                  style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            if (recurringThisMonth.isEmpty)
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(vertical: 40.0),
+                  child: Text('No recurring transactions scheduled for this month.'),
+                ),
+              )
+            else
+              ListView.separated(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: recurringThisMonth.length,
+                separatorBuilder: (context, index) => const Divider(color: Color(0xFF23232A)),
+                itemBuilder: (context, index) {
+                  final rt = recurringThisMonth[index];
+                  
+                  final account = service.accounts.firstWhere(
+                    (a) => a.id == rt.accountId,
+                    orElse: () => Account(id: '', name: 'Deleted Account', type: 'checking', currency: 'USD', createdAt: DateTime.now(), updatedAt: DateTime.now()),
+                  );
+
+                  final category = service.categories.firstWhere(
+                    (c) => c.id == rt.categoryId,
+                    orElse: () => Category(id: '', name: 'Uncategorized', type: 'expense', createdAt: DateTime.now()),
+                  );
+
+                  final isExpense = rt.amount < 0 || category.type == 'expense' || category.type == 'investment';
+                  final prefix = isExpense ? '-' : '+';
+                  final amountColor = isExpense ? AppTheme.dangerRed : AppTheme.successGreen;
+
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8.0),
+                    child: Row(
+                      children: [
+                        // Type Icon
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: isExpense
+                                ? AppTheme.dangerRed.withOpacity(0.1)
+                                : AppTheme.successGreen.withOpacity(0.1),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            isExpense
+                                ? Icons.arrow_downward_rounded
+                                : Icons.arrow_upward_rounded,
+                            color: isExpense ? AppTheme.dangerRed : AppTheme.successGreen,
+                            size: 16,
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        // Details
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                rt.description,
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                '${category.name} • ${rt.frequency.toUpperCase()} (Every ${rt.interval} period)',
+                                style: const TextStyle(color: AppTheme.textSecondary, fontSize: 11),
+                              ),
+                            ],
+                          ),
+                        ),
+                        // Date & Amount
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Text(
+                              '$prefix${service.formatAndConvert(rt.amount.abs(), account.currency)}',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: amountColor,
+                                fontSize: 14,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Due: ${DateFormat('MM-dd').format(rt.nextDueDate)}',
+                              style: const TextStyle(color: AppTheme.textSecondary, fontSize: 11),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+          ],
+        ),
       ),
     );
   }

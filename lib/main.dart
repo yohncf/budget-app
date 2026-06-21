@@ -10,6 +10,9 @@ import 'views/dashboard_page.dart';
 import 'views/ledger_page.dart';
 import 'views/accounts_page.dart';
 import 'views/login_page.dart';
+import 'views/holdings_page.dart';
+import 'views/settings_page.dart';
+
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -93,6 +96,7 @@ class _MainLayoutState extends State<MainLayout> {
     const DashboardPage(),
     const LedgerPage(),
     const AccountsPage(),
+    const HoldingsPage(),
   ];
 
   @override
@@ -102,232 +106,252 @@ class _MainLayoutState extends State<MainLayout> {
 
   @override
   Widget build(BuildContext context) {
-    final isMobile = MediaQuery.of(context).size.width < 768;
-
-    if (isMobile) {
-      return Scaffold(
-        appBar: AppBar(
-          backgroundColor: AppTheme.darkCard,
-          elevation: 0,
-          title: Text(
-            _selectedIndex == 0
-                ? 'Dashboard'
-                : _selectedIndex == 1
-                    ? 'Ledger'
-                    : 'Accounts',
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
-          ),
-          actions: [
-            Consumer<DataService>(
-              builder: (context, ds, child) {
-                final displayCurrencies = ds.availableDisplayCurrencies;
-                return Container(
-                  margin: const EdgeInsets.only(right: 16.0),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF1D1D22),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: const Color(0xFF23232A)),
-                  ),
-                  child: PopupMenuButton<String>(
-                    initialValue: ds.displayCurrency,
-                    tooltip: 'Change display currency',
-                    onSelected: (currency) {
-                      ds.setDisplayCurrency(currency);
-                    },
-                    color: AppTheme.darkCard,
-                    itemBuilder: (context) {
-                      return displayCurrencies.map((c) {
-                        return PopupMenuItem<String>(
-                          value: c,
-                          child: Text(
-                            c,
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: ds.displayCurrency == c ? FontWeight.bold : FontWeight.normal,
-                              color: ds.displayCurrency == c ? AppTheme.mainAction : Colors.white,
-                            ),
-                          ),
-                        );
-                      }).toList();
-                    },
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 6.0),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            ds.displayCurrency,
-                            style: const TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                              color: AppTheme.mainAction,
-                            ),
-                          ),
-                          const SizedBox(width: 2),
-                          const Icon(
-                            Icons.arrow_drop_down,
-                            size: 14,
-                            color: AppTheme.textSecondary,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ],
-        ),
-        body: Container(
-          decoration: const BoxDecoration(
-            gradient: AppTheme.backgroundGradient,
-          ),
-          child: _pages[_selectedIndex],
-        ),
-        bottomNavigationBar: NavigationBar(
-          backgroundColor: AppTheme.darkCard,
-          indicatorColor: AppTheme.mainAction.withOpacity(0.15),
-          selectedIndex: _selectedIndex,
-          onDestinationSelected: (int index) {
-            setState(() {
-              _selectedIndex = index;
-            });
-          },
-          height: 65,
-          labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-          destinations: const [
-            NavigationDestination(
-              icon: Icon(Icons.dashboard_outlined, color: AppTheme.textSecondary),
-              selectedIcon: Icon(Icons.dashboard, color: AppTheme.mainAction),
-              label: 'Dashboard',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.list_alt_outlined, color: AppTheme.textSecondary),
-              selectedIcon: Icon(Icons.list_alt, color: AppTheme.mainAction),
-              label: 'Ledger',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.account_balance_wallet_outlined, color: AppTheme.textSecondary),
-              selectedIcon: Icon(Icons.account_balance_wallet, color: AppTheme.mainAction),
-              label: 'Accounts',
-            ),
-          ],
-        ),
-      );
-    }
-
     return Scaffold(
-      body: Row(
-        children: [
-          // Sidebar rail for premium desktop feel
-          NavigationRail(
-            backgroundColor: AppTheme.darkCard,
-            selectedIndex: _selectedIndex,
-            labelType: NavigationRailLabelType.all,
-            onDestinationSelected: (int index) {
-              setState(() {
-                _selectedIndex = index;
-              });
-            },
-            unselectedLabelTextStyle: const TextStyle(color: AppTheme.textSecondary, fontSize: 11),
-            selectedLabelTextStyle: const TextStyle(color: AppTheme.mainAction, fontSize: 12, fontWeight: FontWeight.bold),
-            leading: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 24.0),
-              child: Image.asset(
-                'assets/images/app_logo.png',
-                width: 48,
-                height: 48,
-                errorBuilder: (context, error, stackTrace) => const Icon(Icons.analytics, size: 36, color: AppTheme.mainAction),
-              ),
+      appBar: AppBar(
+        backgroundColor: AppTheme.darkCard,
+        elevation: 0,
+        leading: Builder(
+          builder: (context) => IconButton(
+            icon: Image.asset(
+              'assets/images/app_logo.png',
+              width: 32,
+              height: 32,
+              errorBuilder: (context, error, stackTrace) => const Icon(Icons.analytics, size: 28, color: AppTheme.mainAction),
             ),
-            trailing: Consumer<DataService>(
-              builder: (context, ds, child) {
-                final displayCurrencies = ds.availableDisplayCurrencies;
-                return Padding(
-                  padding: const EdgeInsets.only(top: 32.0, bottom: 16.0),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF1D1D22),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: const Color(0xFF23232A)),
-                    ),
-                    child: PopupMenuButton<String>(
-                      initialValue: ds.displayCurrency,
-                      tooltip: 'Change display currency',
-                      onSelected: (currency) {
-                        ds.setDisplayCurrency(currency);
-                      },
-                      offset: const Offset(60, 0),
-                      color: AppTheme.darkCard,
-                      itemBuilder: (context) {
-                        return displayCurrencies.map((c) {
-                          return PopupMenuItem<String>(
-                            value: c,
-                            child: Text(
-                              c,
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: ds.displayCurrency == c ? FontWeight.bold : FontWeight.normal,
-                                color: ds.displayCurrency == c ? AppTheme.mainAction : Colors.white,
-                              ),
-                            ),
-                          );
-                        }).toList();
-                      },
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              ds.displayCurrency,
-                              style: const TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.bold,
-                                  color: AppTheme.mainAction,
-                              ),
-                            ),
-                            const SizedBox(width: 2),
-                            const Icon(
-                              Icons.arrow_drop_down,
-                              size: 14,
-                              color: AppTheme.textSecondary,
-                            ),
-                          ],
+            tooltip: 'Open menu',
+            onPressed: () => Scaffold.of(context).openDrawer(),
+          ),
+        ),
+        title: Text(
+          _selectedIndex == 0
+              ? 'Dashboard'
+              : _selectedIndex == 1
+                  ? 'Ledger'
+                  : _selectedIndex == 2
+                      ? 'Accounts'
+                      : 'Holdings',
+          style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+        ),
+        actions: [
+          Consumer<DataService>(
+            builder: (context, ds, child) {
+              final displayCurrencies = ds.availableDisplayCurrencies;
+              return Container(
+                margin: const EdgeInsets.only(right: 16.0),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1D1D22),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFF23232A)),
+                ),
+                child: PopupMenuButton<String>(
+                  initialValue: ds.displayCurrency,
+                  tooltip: 'Change display currency',
+                  onSelected: (currency) {
+                    ds.setDisplayCurrency(currency);
+                  },
+                  color: AppTheme.darkCard,
+                  itemBuilder: (context) {
+                    return displayCurrencies.map((c) {
+                      return PopupMenuItem<String>(
+                        value: c,
+                        child: Text(
+                          c,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: ds.displayCurrency == c ? FontWeight.bold : FontWeight.normal,
+                            color: ds.displayCurrency == c ? AppTheme.mainAction : Colors.white,
+                          ),
                         ),
-                      ),
+                      );
+                    }).toList();
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 6.0),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          ds.displayCurrency,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: AppTheme.mainAction,
+                          ),
+                        ),
+                        const SizedBox(width: 2),
+                        const Icon(
+                          Icons.arrow_drop_down,
+                          size: 14,
+                          color: AppTheme.textSecondary,
+                        ),
+                      ],
                     ),
                   ),
-                );
-              },
-            ),
-            destinations: const [
-              NavigationRailDestination(
-                icon: Icon(Icons.dashboard_outlined),
-                selectedIcon: Icon(Icons.dashboard, color: AppTheme.mainAction),
-                label: Text('Dashboard'),
-              ),
-              NavigationRailDestination(
-                icon: Icon(Icons.list_alt_outlined),
-                selectedIcon: Icon(Icons.list_alt, color: AppTheme.mainAction),
-                label: Text('Ledger'),
-              ),
-              NavigationRailDestination(
-                icon: Icon(Icons.account_balance_wallet_outlined),
-                selectedIcon: Icon(Icons.account_balance_wallet, color: AppTheme.mainAction),
-                label: Text('Accounts'),
-              ),
-            ],
-          ),
-          const VerticalDivider(thickness: 1, width: 1, color: Color(0xFF23232A)),
-          
-          // Main Content
-          Expanded(
-            child: _pages[_selectedIndex],
+                ),
+              );
+            },
           ),
         ],
+      ),
+      drawer: Drawer(
+        backgroundColor: AppTheme.darkCard,
+        child: Column(
+          children: [
+            DrawerHeader(
+              decoration: const BoxDecoration(
+                color: Color(0xFF1D1D2C),
+              ),
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Image.asset(
+                      'assets/images/app_logo.png',
+                      width: 64,
+                      height: 64,
+                      errorBuilder: (context, error, stackTrace) => const Icon(Icons.analytics, size: 48, color: AppTheme.mainAction),
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Budget App Ledger',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            Expanded(
+              child: ListView(
+                padding: EdgeInsets.zero,
+                children: [
+                  ListTile(
+                    leading: Icon(
+                      _selectedIndex == 0 ? Icons.dashboard : Icons.dashboard_outlined,
+                      color: _selectedIndex == 0 ? AppTheme.mainAction : AppTheme.textSecondary,
+                    ),
+                    title: Text(
+                      'Dashboard',
+                      style: TextStyle(
+                        color: _selectedIndex == 0 ? Colors.white : AppTheme.textSecondary,
+                        fontWeight: _selectedIndex == 0 ? FontWeight.bold : FontWeight.normal,
+                      ),
+                    ),
+                    selected: _selectedIndex == 0,
+                    selectedTileColor: AppTheme.mainAction.withOpacity(0.1),
+                    onTap: () {
+                      setState(() {
+                        _selectedIndex = 0;
+                      });
+                      Navigator.pop(context);
+                    },
+                  ),
+                  ListTile(
+                    leading: Icon(
+                      _selectedIndex == 1 ? Icons.list_alt : Icons.list_alt_outlined,
+                      color: _selectedIndex == 1 ? AppTheme.mainAction : AppTheme.textSecondary,
+                    ),
+                    title: Text(
+                      'Ledger',
+                      style: TextStyle(
+                        color: _selectedIndex == 1 ? Colors.white : AppTheme.textSecondary,
+                        fontWeight: _selectedIndex == 1 ? FontWeight.bold : FontWeight.normal,
+                      ),
+                    ),
+                    selected: _selectedIndex == 1,
+                    selectedTileColor: AppTheme.mainAction.withOpacity(0.1),
+                    onTap: () {
+                      setState(() {
+                        _selectedIndex = 1;
+                      });
+                      Navigator.pop(context);
+                    },
+                  ),
+                  ListTile(
+                    leading: Icon(
+                      _selectedIndex == 2 ? Icons.account_balance_wallet : Icons.account_balance_wallet_outlined,
+                      color: _selectedIndex == 2 ? AppTheme.mainAction : AppTheme.textSecondary,
+                    ),
+                    title: Text(
+                      'Accounts',
+                      style: TextStyle(
+                        color: _selectedIndex == 2 ? Colors.white : AppTheme.textSecondary,
+                        fontWeight: _selectedIndex == 2 ? FontWeight.bold : FontWeight.normal,
+                      ),
+                    ),
+                    selected: _selectedIndex == 2,
+                    selectedTileColor: AppTheme.mainAction.withOpacity(0.1),
+                    onTap: () {
+                      setState(() {
+                        _selectedIndex = 2;
+                      });
+                      Navigator.pop(context);
+                    },
+                  ),
+                  ListTile(
+                    leading: Icon(
+                      _selectedIndex == 3 ? Icons.pie_chart : Icons.pie_chart_outline,
+                      color: _selectedIndex == 3 ? AppTheme.mainAction : AppTheme.textSecondary,
+                    ),
+                    title: Text(
+                      'Holdings',
+                      style: TextStyle(
+                        color: _selectedIndex == 3 ? Colors.white : AppTheme.textSecondary,
+                        fontWeight: _selectedIndex == 3 ? FontWeight.bold : FontWeight.normal,
+                      ),
+                    ),
+                    selected: _selectedIndex == 3,
+                    selectedTileColor: AppTheme.mainAction.withOpacity(0.1),
+                    onTap: () {
+                      setState(() {
+                        _selectedIndex = 3;
+                      });
+                      Navigator.pop(context);
+                    },
+                  ),
+                ],
+              ),
+            ),
+            const Divider(color: Color(0xFF23232A), height: 1),
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.settings, color: AppTheme.textSecondary),
+                    tooltip: 'Settings',
+                    onPressed: () {
+                      Navigator.pop(context); // close drawer
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => const SettingsPage()),
+                      );
+                    },
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    icon: const Icon(Icons.logout, color: Colors.redAccent),
+                    tooltip: 'Logout',
+                    onPressed: () async {
+                      await FirebaseAuth.instance.signOut();
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: AppTheme.backgroundGradient,
+        ),
+        child: _pages[_selectedIndex],
       ),
     );
   }

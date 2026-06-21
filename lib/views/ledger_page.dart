@@ -20,6 +20,10 @@ class _LedgerPageState extends State<LedgerPage> {
   final _uuid = const Uuid();
   final _formKey = GlobalKey<FormState>();
   
+  // Filter values
+  String _filterType = 'All'; // All, Expense, Income, Transfer
+  String _filterCategoryId = 'All'; // All, or specific category ID
+  
   // Form values
   String? _selectedAccountId;
   String? _selectedTransferToAccountId;
@@ -119,118 +123,180 @@ class _LedgerPageState extends State<LedgerPage> {
               const SizedBox(height: 16),
               
               // Responsive Filters
-              isMobile
-                  ? Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Text(
-                              'Showing since:',
-                              style: TextStyle(color: AppTheme.textSecondary, fontSize: 13),
-                            ),
-                            OutlinedButton.icon(
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: AppTheme.accentCyan,
-                                side: const BorderSide(color: AppTheme.accentCyan),
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                              ),
-                              icon: const Icon(Icons.calendar_today, size: 12),
-                              label: Text(
-                                DateFormat('yyyy-MM-dd').format(dataService.transactionFilterDate),
-                                style: const TextStyle(fontSize: 12),
-                              ),
-                              onPressed: () async {
-                                final picked = await showDatePicker(
-                                  context: context,
-                                  initialDate: dataService.transactionFilterDate,
-                                  firstDate: DateTime(2020),
-                                  lastDate: DateTime.now().add(const Duration(days: 365)),
-                                );
-                                if (picked != null) {
-                                  dataService.setTransactionFilterDate(picked);
-                                }
-                              },
-                            ),
-                          ],
+              Wrap(
+                spacing: 16,
+                runSpacing: 12,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  // Showing since Date Filter
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text(
+                        'Showing since: ',
+                        style: TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+                      ),
+                      const SizedBox(width: 8),
+                      OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppTheme.accentCyan,
+                          side: const BorderSide(color: AppTheme.accentCyan),
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                         ),
-                        const SizedBox(height: 4),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Text(
-                              'Show Deleted',
-                              style: TextStyle(color: AppTheme.textSecondary, fontSize: 13),
-                            ),
-                            Switch(
-                              value: _showDeleted,
-                              activeColor: AppTheme.accentCyan,
-                              onChanged: (val) {
+                        icon: const Icon(Icons.calendar_today, size: 12),
+                        label: Text(
+                          DateFormat('yyyy-MM-dd').format(dataService.transactionFilterDate),
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                        onPressed: () async {
+                          final picked = await showDatePicker(
+                            context: context,
+                            initialDate: dataService.transactionFilterDate,
+                            firstDate: DateTime(2020),
+                            lastDate: DateTime.now().add(const Duration(days: 365)),
+                          );
+                          if (picked != null) {
+                            dataService.setTransactionFilterDate(picked);
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+
+                  // Transaction Type Dropdown Filter
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text(
+                        'Type: ',
+                        style: TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF1D1D22),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0xFF23232A)),
+                        ),
+                        child: DropdownButtonHideUnderline(
+                          child: DropdownButton<String>(
+                            value: _filterType,
+                            dropdownColor: AppTheme.darkCard,
+                            style: const TextStyle(color: Colors.white, fontSize: 13),
+                            icon: const Icon(Icons.arrow_drop_down, color: AppTheme.textSecondary, size: 18),
+                            items: const [
+                              DropdownMenuItem(value: 'All', child: Text('All Types')),
+                              DropdownMenuItem(value: 'Expense', child: Text('Expenses')),
+                              DropdownMenuItem(value: 'Income', child: Text('Income')),
+                              DropdownMenuItem(value: 'Transfer', child: Text('Transfers')),
+                            ],
+                            onChanged: (newType) {
+                              if (newType != null) {
                                 setState(() {
-                                  _showDeleted = val;
+                                  _filterType = newType;
+                                  // Reset category filter if it doesn't match the new type
+                                  if (_filterCategoryId != 'All') {
+                                    final hasCat = dataService.categories.any((c) {
+                                      if (c.id != _filterCategoryId) return false;
+                                      if (newType == 'All') return true;
+                                      if (newType == 'Expense') return c.type == 'expense' || c.type == 'investment';
+                                      if (newType == 'Income') return c.type == 'income' || c.type == 'reimbursement';
+                                      if (newType == 'Transfer') return c.type == 'transfer';
+                                      return true;
+                                    });
+                                    if (!hasCat) {
+                                      _filterCategoryId = 'All';
+                                    }
+                                  }
                                 });
-                              },
-                            ),
-                          ],
+                              }
+                            },
+                          ),
                         ),
-                      ],
-                    )
-                  : Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Row(
-                          children: [
-                            const Text(
-                              'Showing transactions since: ',
-                              style: TextStyle(color: AppTheme.textSecondary, fontSize: 14),
+                      ),
+                    ],
+                  ),
+
+                  // Category Dropdown Filter
+                  Builder(
+                    builder: (context) {
+                      final categoriesList = dataService.categories.where((c) {
+                        if (_filterType == 'All') return true;
+                        if (_filterType == 'Expense') return c.type == 'expense' || c.type == 'investment';
+                        if (_filterType == 'Income') return c.type == 'income' || c.type == 'reimbursement';
+                        if (_filterType == 'Transfer') return c.type == 'transfer';
+                        return true;
+                      }).toList();
+                      categoriesList.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+
+                      return Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Text(
+                            'Category: ',
+                            style: TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+                          ),
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF1D1D22),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: const Color(0xFF23232A)),
                             ),
-                            const SizedBox(width: 8),
-                            OutlinedButton.icon(
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: AppTheme.accentCyan,
-                                side: const BorderSide(color: AppTheme.accentCyan),
-                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            child: DropdownButtonHideUnderline(
+                              child: DropdownButton<String>(
+                                value: _filterCategoryId,
+                                dropdownColor: AppTheme.darkCard,
+                                style: const TextStyle(color: Colors.white, fontSize: 13),
+                                icon: const Icon(Icons.arrow_drop_down, color: AppTheme.textSecondary, size: 18),
+                                items: [
+                                  const DropdownMenuItem(value: 'All', child: Text('All Categories')),
+                                  ...categoriesList.map((c) => DropdownMenuItem(
+                                        value: c.id,
+                                        child: Text(c.name),
+                                      )),
+                                ],
+                                onChanged: (newCatId) {
+                                  if (newCatId != null) {
+                                    setState(() {
+                                      _filterCategoryId = newCatId;
+                                    });
+                                  }
+                                },
                               ),
-                              icon: const Icon(Icons.calendar_today, size: 14),
-                              label: Text(DateFormat('yyyy-MM-dd').format(dataService.transactionFilterDate)),
-                              onPressed: () async {
-                                final picked = await showDatePicker(
-                                  context: context,
-                                  initialDate: dataService.transactionFilterDate,
-                                  firstDate: DateTime(2020),
-                                  lastDate: DateTime.now().add(const Duration(days: 365)),
-                                );
-                                if (picked != null) {
-                                  dataService.setTransactionFilterDate(picked);
-                                }
-                              },
                             ),
-                          ],
-                        ),
-                        Row(
-                          children: [
-                            const Text(
-                              'Show Deleted',
-                              style: TextStyle(color: AppTheme.textSecondary, fontSize: 14),
-                            ),
-                            const SizedBox(width: 8),
-                            Switch(
-                              value: _showDeleted,
-                              activeColor: AppTheme.accentCyan,
-                              onChanged: (val) {
-                                setState(() {
-                                  _showDeleted = val;
-                                });
-                              },
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-              const SizedBox(height: 24),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+
+                  // Show Deleted Switch
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text(
+                        'Show Deleted',
+                        style: TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+                      ),
+                      const SizedBox(width: 4),
+                      Switch(
+                        value: _showDeleted,
+                        activeColor: AppTheme.accentCyan,
+                        onChanged: (val) {
+                          setState(() {
+                            _showDeleted = val;
+                          });
+                        },
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
 
               // Ledger Table/List
               Expanded(
@@ -243,6 +309,28 @@ class _LedgerPageState extends State<LedgerPage> {
                           if (tx.status == 'deleted' && !_showDeleted) {
                             return false;
                           }
+                          
+                          final cat = dataService.categories.firstWhere(
+                            (c) => c.id == tx.categoryId,
+                            orElse: () => Category(id: '', name: 'Unknown', type: 'expense', createdAt: DateTime.now()),
+                          );
+
+                          if (_filterType != 'All') {
+                            if (_filterType == 'Expense' && cat.type != 'expense' && cat.type != 'investment') {
+                              return false;
+                            }
+                            if (_filterType == 'Income' && cat.type != 'income' && cat.type != 'reimbursement') {
+                              return false;
+                            }
+                            if (_filterType == 'Transfer' && cat.type != 'transfer') {
+                              return false;
+                            }
+                          }
+
+                          if (_filterCategoryId != 'All' && tx.categoryId != _filterCategoryId) {
+                            return false;
+                          }
+                          
                           return true;
                         }).toList();
 
@@ -637,7 +725,7 @@ class _LedgerPageState extends State<LedgerPage> {
         _selectedTransferToAccountId = activeAccounts.isNotEmpty ? activeAccounts.first.id : null;
       }
       _selectedCategoryId = null; // Start empty/not prefilled
-      _selectedTxCurrency = 'USD';
+      _selectedTxCurrency = 'MXN';
       _amountController.clear();
       _descriptionController.clear();
       _selectedDate = DateTime.now();
@@ -904,7 +992,13 @@ class _LedgerPageState extends State<LedgerPage> {
                                 child: DropdownButtonFormField<String>(
                                   value: _selectedTxCurrency,
                                   decoration: const InputDecoration(labelText: 'Currency'),
-                                  items: ['MXN', 'USD', 'SOL', 'PEN'].map<DropdownMenuItem<String>>((String c) {
+                                  items: (() {
+                                    final list = List<String>.from(dataService.availableDisplayCurrencies);
+                                    if (_selectedTxCurrency != null && !list.contains(_selectedTxCurrency)) {
+                                      list.add(_selectedTxCurrency!);
+                                    }
+                                    return list;
+                                  })().map<DropdownMenuItem<String>>((String c) {
                                     return DropdownMenuItem(value: c, child: Text(c));
                                   }).toList(),
                                   onChanged: (val) {
