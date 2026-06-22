@@ -7,6 +7,7 @@ import '../models/account.dart';
 import '../models/category.dart';
 import '../models/budget_target.dart';
 import '../models/recurring_transaction.dart';
+import '../models/transaction.dart';
 import 'package:intl/intl.dart';
 
 class DashboardPage extends StatefulWidget {
@@ -32,6 +33,18 @@ class _DashboardPageState extends State<DashboardPage> {
       months.add(DateTime(now.year, now.month - i, 1));
     }
     return months;
+  }
+
+  Color _resolveCategoryColor(Category cat, DataService service) {
+    final idx = service.categories.indexWhere((c) => c.id == cat.id);
+    if (idx != -1) {
+      return AppTheme.categoryColors[idx % AppTheme.categoryColors.length];
+    }
+    try {
+      return Color(int.parse(cat.colorHex.replaceFirst('#', '0xFF')));
+    } catch (_) {
+      return AppTheme.mainAction;
+    }
   }
 
   void _onMonthChanged(DateTime? newMonth, DataService service) {
@@ -180,36 +193,16 @@ class _DashboardPageState extends State<DashboardPage> {
                 const SizedBox(height: 32),
 
                 // Main Layout Grid
-                LayoutBuilder(
-                  builder: (context, constraints) {
-                    final isWide = constraints.maxWidth >= 900;
-                    return Column(
-                      children: [
-                        _buildIncomeVsExpensesChart(context, dataService),
-                        const SizedBox(height: 24),
-                        isWide
-                            ? Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Expanded(child: _buildBudgetsSection(context, dataService)),
-                                  const SizedBox(width: 24),
-                                  Expanded(child: _buildRecurringTransactionsSection(context, dataService)),
-                                ],
-                              )
-                            : Column(
-                                children: [
-                                  _buildBudgetsSection(context, dataService),
-                                  const SizedBox(height: 24),
-                                  _buildRecurringTransactionsSection(context, dataService),
-                                ],
-                              ),
-                        const SizedBox(height: 24),
-                        _buildChartsSection(context, dataService),
-                        const SizedBox(height: 24),
-                        _buildNetWorthCard(context, dataService),
-                      ],
-                    );
-                  },
+                Column(
+                  children: [
+                    _buildIncomeVsExpensesChart(context, dataService),
+                    const SizedBox(height: 24),
+                    _buildChartsSection(context, dataService),
+                    const SizedBox(height: 24),
+                    _buildMergedBudgetsAndRecurringSection(context, dataService),
+                    const SizedBox(height: 24),
+                    _buildNetWorthCard(context, dataService),
+                  ],
                 ),
               ],
             ),
@@ -1064,11 +1057,41 @@ class _DashboardPageState extends State<DashboardPage> {
     );
   }
 
-  Widget _buildBudgetsSection(BuildContext context, DataService service) {
+  double _getRecurringSpent(RecurringTransaction rt, DataService service) {
+    double spent = 0.0;
+    for (Transaction tx in service.transactions) {
+      if (tx.status == 'deleted') continue;
+      if (tx.date.year != _selectedMonth.year || tx.date.month != _selectedMonth.month) {
+        continue;
+      }
+      
+      bool isMatch = false;
+      if (tx.recurringId == rt.id) {
+        isMatch = true;
+      } else if (tx.categoryId == rt.categoryId) {
+        final txDesc = (tx.description ?? '').toLowerCase().trim();
+        final rtDesc = rt.description.toLowerCase().trim();
+        if (rtDesc.isNotEmpty && txDesc.isNotEmpty) {
+          if (txDesc.contains(rtDesc) || rtDesc.contains(txDesc)) {
+            isMatch = true;
+          }
+        } else if (rtDesc.isEmpty) {
+          isMatch = true;
+        }
+      }
+      
+      if (isMatch) {
+        spent += service.convertToDisplay(tx.amount.abs(), tx.currency);
+      }
+    }
+    return spent;
+  }
+
+  Widget _buildMergedBudgetsAndRecurringSection(BuildContext context, DataService service) {
     final expenseCategories = service.categories.where((c) => c.type == 'expense').toList();
 
     final Map<String, double> categorySpending = {};
-    for (var tx in service.transactions) {
+    for (Transaction tx in service.transactions) {
       if (tx.status == 'deleted') continue;
       if (tx.date.year != _selectedMonth.year || tx.date.month != _selectedMonth.month) {
         continue;
@@ -1082,6 +1105,7 @@ class _DashboardPageState extends State<DashboardPage> {
     }
 
     final Map<String, double> categoryBudgets = {};
+    final Map<String, BudgetTarget> categoryBudgetTargetObjects = {};
     for (BudgetTarget target in service.budgetTargets) {
       final startLimit = DateTime(_selectedMonth.year, _selectedMonth.month, 1);
       final endLimit = DateTime(_selectedMonth.year, _selectedMonth.month + 1, 1).subtract(const Duration(days: 1));
@@ -1091,19 +1115,53 @@ class _DashboardPageState extends State<DashboardPage> {
 
       if (!targetStart.isAfter(endLimit) && !targetEnd.isBefore(startLimit)) {
         categoryBudgets[target.categoryId] = target.targetAmount;
+        categoryBudgetTargetObjects[target.categoryId] = target;
       }
     }
+
+    final startOfMonth = DateTime(_selectedMonth.year, _selectedMonth.month, 1);
+    final endOfMonth = DateTime(_selectedMonth.year, _selectedMonth.month + 1, 1).subtract(const Duration(days: 1));
+
+    final recurringThisMonth = service.recurringTransactions.where((rt) {
+      if (rt.status != 'active') return false;
+      if (rt.startDate.isAfter(endOfMonth)) return false;
+      if (rt.endDate != null && rt.endDate!.isBefore(startOfMonth)) return false;
+
+      // Calculate month difference from nextDueDate to _selectedMonth
+      final diffMonths = (_selectedMonth.year - rt.nextDueDate.year) * 12 + (_selectedMonth.month - rt.nextDueDate.month);
+      
+      final freq = rt.frequency.toLowerCase();
+      if (freq == 'monthly') {
+        return diffMonths.abs() % rt.interval == 0;
+      } else if (freq == 'yearly') {
+        return diffMonths.abs() % (rt.interval * 12) == 0;
+      } else {
+        // daily, weekly, biweekly, etc. happen within every month
+        return true;
+      }
+    }).toList();
+
+    recurringThisMonth.sort((a, b) => a.nextDueDate.compareTo(b.nextDueDate));
 
     final List<Map<String, dynamic>> budgetList = [];
     for (var cat in expenseCategories) {
       final spent = categorySpending[cat.id] ?? 0.0;
       final budget = categoryBudgets[cat.id];
-      if (budget != null) {
-        budgetList.add({
-          'category': cat,
-          'spent': spent,
-          'budget': budget,
-        });
+      final target = categoryBudgetTargetObjects[cat.id];
+      if (budget != null && target != null) {
+        final hasRecurringThisMonth = recurringThisMonth.any((rt) => rt.categoryId == cat.id);
+        final isStartMonth = target.startDate.year == _selectedMonth.year && target.startDate.month == _selectedMonth.month;
+
+        if (target.period.toLowerCase() == 'monthly' ||
+            spent > 0 ||
+            hasRecurringThisMonth ||
+            isStartMonth) {
+          budgetList.add({
+            'category': cat,
+            'spent': spent,
+            'budget': budget,
+          });
+        }
       }
     }
 
@@ -1115,176 +1173,362 @@ class _DashboardPageState extends State<DashboardPage> {
       return (b['spent'] as double).compareTo(a['spent'] as double);
     });
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(24.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'Category Budgets',
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-                Text(
-                  'Selected Month: ${DateFormat('MMMM yyyy').format(_selectedMonth)}',
-                  style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
-                ),
-              ],
+    final budgetsWidget = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Category Budgets',
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+        ),
+        const SizedBox(height: 16),
+        if (budgetList.isEmpty)
+          const Center(
+            child: Padding(
+              padding: EdgeInsets.symmetric(vertical: 40.0),
+              child: Text('No spending or budget targets set for this month.'),
             ),
-            const SizedBox(height: 16),
-            if (budgetList.isEmpty)
-              const Center(
-                child: Padding(
-                  padding: EdgeInsets.symmetric(vertical: 40.0),
-                  child: Text('No spending or budget targets set for this month.'),
-                ),
-              )
-            else
-              ListView.separated(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: budgetList.length,
-                separatorBuilder: (context, index) => const SizedBox(height: 16),
-                itemBuilder: (context, index) {
-                  final item = budgetList[index];
-                  final Category cat = item['category'];
-                  final double spent = item['spent'];
-                  final double? budget = item['budget'];
+          )
+        else
+          ListView.separated(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: budgetList.length,
+            separatorBuilder: (context, index) => const SizedBox(height: 16),
+            itemBuilder: (context, index) {
+              final item = budgetList[index];
+              final Category cat = item['category'];
+              final double spent = item['spent'];
+              final double budget = item['budget'];
 
-                  final percent = budget != null && budget > 0 ? (spent / budget) : 0.0;
-                  final isOver = budget != null && spent > budget;
-                  
-                  Color progressColor = AppTheme.mainAction;
-                  if (budget != null) {
-                    if (isOver) {
-                      progressColor = AppTheme.dangerRed;
-                    } else if (percent > 0.8) {
-                      progressColor = AppTheme.warningOrange;
-                    } else {
-                      progressColor = AppTheme.successGreen;
-                    }
-                  }
+              final percent = budget > 0 ? (spent / budget) : 0.0;
+              final isOver = spent > budget;
+              
+              Color progressColor = AppTheme.mainAction;
+              String statusText = 'On track';
+              Color statusColor = AppTheme.successGreen;
+              if (isOver) {
+                progressColor = AppTheme.dangerRed;
+                statusText = 'Over limit';
+                statusColor = AppTheme.dangerRed;
+              } else if (percent > 0.8) {
+                progressColor = AppTheme.warningOrange;
+                statusText = 'Near limit';
+                statusColor = AppTheme.warningOrange;
+              }
 
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Row(
-                            children: [
-                              Container(
-                                width: 8,
-                                height: 8,
-                                decoration: BoxDecoration(
-                                  color: Color(int.parse(cat.colorHex.replaceFirst('#', '0xFF'))),
-                                  shape: BoxShape.circle,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                cat.name,
-                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                              ),
-                            ],
+                          Container(
+                            width: 8,
+                            height: 8,
+                            decoration: BoxDecoration(
+                              color: _resolveCategoryColor(cat, service),
+                              shape: BoxShape.circle,
+                            ),
                           ),
+                          const SizedBox(width: 8),
+                          Text(
+                            cat.name,
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                          ),
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: statusColor.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: statusColor.withOpacity(0.3), width: 1),
+                            ),
+                            child: Text(
+                              statusText,
+                              style: TextStyle(
+                                color: statusColor,
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      Row(
+                        children: [
+                          Text(
+                            service.formatCurrency(spent),
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                          ),
+                          const Text(' / ', style: TextStyle(color: AppTheme.textSecondary, fontSize: 11)),
+                          Text(
+                            service.formatCurrency(budget),
+                            style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Stack(
+                    children: [
+                      Container(
+                        height: 6,
+                        width: double.infinity,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF1D1D22),
+                          borderRadius: BorderRadius.circular(3),
+                        ),
+                      ),
+                      FractionallySizedBox(
+                        widthFactor: percent.clamp(0.0, 1.0),
+                        child: Container(
+                          height: 6,
+                          decoration: BoxDecoration(
+                            color: progressColor,
+                            borderRadius: BorderRadius.circular(3),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        '${(percent * 100).toStringAsFixed(0)}% used',
+                        style: TextStyle(color: isOver ? AppTheme.dangerRed : AppTheme.textSecondary, fontSize: 11),
+                      ),
+                      if (isOver)
+                        Text(
+                          'Over by ${service.formatCurrency(spent - budget)}',
+                          style: const TextStyle(color: AppTheme.dangerRed, fontSize: 11, fontWeight: FontWeight.bold),
+                        )
+                      else
+                        Text(
+                          'Remaining: ${service.formatCurrency(budget - spent)}',
+                          style: const TextStyle(color: AppTheme.successGreen, fontSize: 11),
+                        ),
+                    ],
+                  ),
+                ],
+              );
+            },
+          ),
+      ],
+    );
+
+    final recurringWidget = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Recurring Transactions',
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+        ),
+        const SizedBox(height: 16),
+        if (recurringThisMonth.isEmpty)
+          const Center(
+            child: Padding(
+              padding: EdgeInsets.symmetric(vertical: 40.0),
+              child: Text('No recurring transactions scheduled for this month.'),
+            ),
+          )
+        else
+          ListView.separated(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: recurringThisMonth.length,
+            separatorBuilder: (context, index) => const SizedBox(height: 20),
+            itemBuilder: (context, index) {
+              final rt = recurringThisMonth[index];
+              
+              final account = service.accounts.firstWhere(
+                (a) => a.id == rt.accountId,
+                orElse: () => Account(id: '', name: 'Deleted Account', type: 'checking', currency: 'USD', createdAt: DateTime.now(), updatedAt: DateTime.now()),
+              );
+
+              final category = service.categories.firstWhere(
+                (c) => c.id == rt.categoryId,
+                orElse: () => Category(id: '', name: 'Uncategorized', type: 'expense', createdAt: DateTime.now()),
+              );
+
+              final double budget = service.convertToDisplay(rt.amount.abs(), account.currency);
+              final double spent = _getRecurringSpent(rt, service);
+              final percent = budget > 0 ? (spent / budget) : 0.0;
+              final isPaid = spent >= budget;
+
+              final isExpense = rt.amount < 0 || category.type == 'expense' || category.type == 'investment';
+              final amountColor = isExpense ? AppTheme.dangerRed : AppTheme.successGreen;
+
+              Color progressColor = AppTheme.mainAction;
+              String statusText = 'Upcoming';
+              Color statusColor = AppTheme.textSecondary;
+              if (isPaid) {
+                progressColor = AppTheme.successGreen;
+                statusText = 'Paid';
+                statusColor = AppTheme.successGreen;
+              } else if (spent > 0) {
+                progressColor = AppTheme.warningOrange;
+                statusText = 'Paying';
+                statusColor = AppTheme.warningOrange;
+              } else {
+                progressColor = AppTheme.textSecondary.withOpacity(0.5);
+              }
+
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      // Icon
+                      Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: isExpense
+                              ? AppTheme.dangerRed.withOpacity(0.1)
+                              : AppTheme.successGreen.withOpacity(0.1),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          isExpense
+                              ? Icons.arrow_downward_rounded
+                              : Icons.arrow_upward_rounded,
+                          color: isExpense ? AppTheme.dangerRed : AppTheme.successGreen,
+                          size: 14,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      // Details
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Text(
+                                  rt.description,
+                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                ),
+                                const SizedBox(width: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: statusColor.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(color: statusColor.withOpacity(0.3), width: 1),
+                                  ),
+                                  child: Text(
+                                    statusText,
+                                    style: TextStyle(
+                                      color: statusColor,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              '${category.name} • ${rt.frequency.toUpperCase()}',
+                              style: const TextStyle(color: AppTheme.textSecondary, fontSize: 11),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      // Amount
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
                           Row(
                             children: [
                               Text(
                                 service.formatCurrency(spent),
-                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: spent > 0 ? amountColor : Colors.white),
                               ),
-                              if (budget != null) ...[
-                                const Text(' / ', style: TextStyle(color: AppTheme.textSecondary, fontSize: 11)),
-                                Text(
-                                  service.formatCurrency(budget),
-                                  style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12),
-                                ),
-                              ],
+                              const Text(' / ', style: TextStyle(color: AppTheme.textSecondary, fontSize: 11)),
+                              Text(
+                                service.formatCurrency(budget),
+                                style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12),
+                              ),
                             ],
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Due: ${DateFormat('MM-dd').format(rt.nextDueDate)}',
+                            style: const TextStyle(color: AppTheme.textSecondary, fontSize: 11),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 8),
-                      if (budget != null) ...[
-                        Stack(
-                          children: [
-                            Container(
-                              height: 8,
-                              width: double.infinity,
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF1D1D22),
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                            ),
-                            FractionallySizedBox(
-                              widthFactor: percent.clamp(0.0, 1.0),
-                              child: Container(
-                                height: 8,
-                                decoration: BoxDecoration(
-                                  color: progressColor,
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 4),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              '${(percent * 100).toStringAsFixed(0)}% used',
-                              style: TextStyle(color: isOver ? AppTheme.dangerRed : AppTheme.textSecondary, fontSize: 11),
-                            ),
-                            if (isOver)
-                              Text(
-                                'Over by ${service.formatCurrency(spent - budget)}',
-                                style: const TextStyle(color: AppTheme.dangerRed, fontSize: 11, fontWeight: FontWeight.bold),
-                              )
-                            else
-                              Text(
-                                'Remaining: ${service.formatCurrency(budget - spent)}',
-                                style: const TextStyle(color: AppTheme.successGreen, fontSize: 11),
-                              ),
-                          ],
-                        ),
-                      ] else ...[
-                        const Text(
-                          'No budget limit set',
-                          style: TextStyle(color: AppTheme.textSecondary, fontSize: 11, fontStyle: FontStyle.italic),
-                        ),
-                      ],
                     ],
-                  );
-                },
-              ),
-          ],
-        ),
-      ),
+                  ),
+                  const SizedBox(height: 8),
+                  Stack(
+                    children: [
+                      Container(
+                        height: 6,
+                        width: double.infinity,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF1D1D22),
+                          borderRadius: BorderRadius.circular(3),
+                        ),
+                      ),
+                      FractionallySizedBox(
+                        widthFactor: percent.clamp(0.0, 1.0),
+                        child: Container(
+                          height: 6,
+                          decoration: BoxDecoration(
+                            color: progressColor,
+                            borderRadius: BorderRadius.circular(3),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        isPaid
+                            ? 'Fully Paid (100%)'
+                            : spent > 0
+                                ? '${(percent * 100).toStringAsFixed(0)}% paid'
+                                : 'Unpaid (0%)',
+                        style: TextStyle(
+                          color: isPaid ? AppTheme.successGreen : AppTheme.textSecondary,
+                          fontSize: 11,
+                          fontWeight: isPaid ? FontWeight.bold : FontWeight.normal,
+                        ),
+                      ),
+                      if (isPaid)
+                        const Text(
+                          'Paid',
+                          style: TextStyle(color: AppTheme.successGreen, fontSize: 11, fontWeight: FontWeight.bold),
+                        )
+                      else
+                        Text(
+                          'Remaining: ${service.formatCurrency(budget - spent)}',
+                          style: const TextStyle(color: AppTheme.warningOrange, fontSize: 11),
+                        ),
+                    ],
+                  ),
+                ],
+              );
+            },
+          ),
+      ],
     );
-  }
-
-  Widget _buildRecurringTransactionsSection(BuildContext context, DataService service) {
-    final startOfMonth = DateTime(_selectedMonth.year, _selectedMonth.month, 1);
-    final endOfMonth = DateTime(_selectedMonth.year, _selectedMonth.month + 1, 1).subtract(const Duration(days: 1));
-
-    final recurringThisMonth = service.recurringTransactions.where((rt) {
-      if (rt.status != 'active') return false;
-      if (rt.endDate != null && rt.endDate!.isBefore(startOfMonth)) return false;
-      if (rt.startDate.isAfter(endOfMonth)) return false;
-
-      final due = rt.nextDueDate;
-      if (due.isBefore(endOfMonth) || (due.year == _selectedMonth.year && due.month == _selectedMonth.month)) {
-        return true;
-      }
-      return false;
-    }).toList();
-
-    recurringThisMonth.sort((a, b) => a.nextDueDate.compareTo(b.nextDueDate));
 
     return Card(
       child: Padding(
@@ -1296,7 +1540,7 @@ class _DashboardPageState extends State<DashboardPage> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  'Recurring Transactions',
+                  'Budgets & Recurring Transactions',
                   style: Theme.of(context).textTheme.titleLarge,
                 ),
                 Text(
@@ -1305,100 +1549,12 @@ class _DashboardPageState extends State<DashboardPage> {
                 ),
               ],
             ),
-            const SizedBox(height: 16),
-            if (recurringThisMonth.isEmpty)
-              const Center(
-                child: Padding(
-                  padding: EdgeInsets.symmetric(vertical: 40.0),
-                  child: Text('No recurring transactions scheduled for this month.'),
-                ),
-              )
-            else
-              ListView.separated(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: recurringThisMonth.length,
-                separatorBuilder: (context, index) => const Divider(color: Color(0xFF23232A)),
-                itemBuilder: (context, index) {
-                  final rt = recurringThisMonth[index];
-                  
-                  final account = service.accounts.firstWhere(
-                    (a) => a.id == rt.accountId,
-                    orElse: () => Account(id: '', name: 'Deleted Account', type: 'checking', currency: 'USD', createdAt: DateTime.now(), updatedAt: DateTime.now()),
-                  );
-
-                  final category = service.categories.firstWhere(
-                    (c) => c.id == rt.categoryId,
-                    orElse: () => Category(id: '', name: 'Uncategorized', type: 'expense', createdAt: DateTime.now()),
-                  );
-
-                  final isExpense = rt.amount < 0 || category.type == 'expense' || category.type == 'investment';
-                  final prefix = isExpense ? '-' : '+';
-                  final amountColor = isExpense ? AppTheme.dangerRed : AppTheme.successGreen;
-
-                  return Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 8.0),
-                    child: Row(
-                      children: [
-                        // Type Icon
-                        Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: isExpense
-                                ? AppTheme.dangerRed.withOpacity(0.1)
-                                : AppTheme.successGreen.withOpacity(0.1),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(
-                            isExpense
-                                ? Icons.arrow_downward_rounded
-                                : Icons.arrow_upward_rounded,
-                            color: isExpense ? AppTheme.dangerRed : AppTheme.successGreen,
-                            size: 16,
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        // Details
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                rt.description,
-                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                '${category.name} • ${rt.frequency.toUpperCase()} (Every ${rt.interval} period)',
-                                style: const TextStyle(color: AppTheme.textSecondary, fontSize: 11),
-                              ),
-                            ],
-                          ),
-                        ),
-                        // Date & Amount
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            Text(
-                              '$prefix${service.formatAndConvert(rt.amount.abs(), account.currency)}',
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: amountColor,
-                                fontSize: 14,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              'Due: ${DateFormat('MM-dd').format(rt.nextDueDate)}',
-                              style: const TextStyle(color: AppTheme.textSecondary, fontSize: 11),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              ),
+            const SizedBox(height: 24),
+            budgetsWidget,
+            const SizedBox(height: 32),
+            const Divider(color: Color(0xFF23232A)),
+            const SizedBox(height: 24),
+            recurringWidget,
           ],
         ),
       ),

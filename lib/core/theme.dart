@@ -17,6 +17,26 @@ class AppTheme {
   static const Color textPrimary = Color(0xFFF3F4F6);
   static const Color textSecondary = Color(0xFF9CA3AF);
 
+  // Vibrant, distinct colors for categories in dark mode
+  static const List<Color> categoryColors = [
+    Color(0xFF8B5CF6), // Purple
+    Color(0xFF3B82F6), // Blue
+    Color(0xFF10B981), // Emerald Green
+    Color(0xFFF59E0B), // Amber Orange
+    Color(0xFFEF4444), // Red
+    Color(0xFFEC4899), // Pink
+    Color(0xFF06B6D4), // Cyan
+    Color(0xFF84CC16), // Lime Green
+    Color(0xFFEAB308), // Yellow
+    Color(0xFF6366F1), // Indigo
+    Color(0xFFD946EF), // Magenta
+    Color(0xFF14B8A6), // Teal
+    Color(0xFFF97316), // Orange
+    Color(0xFF059669), // Green
+    Color(0xFF4F46E5), // Dark Indigo
+    Color(0xFFDB2777), // Dark Pink
+  ];
+
   // Premium Gradients
   static const LinearGradient primaryGradient = LinearGradient(
     colors: [mainAction, Color(0xFF5E8C00)],

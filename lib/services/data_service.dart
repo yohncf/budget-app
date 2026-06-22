@@ -14,7 +14,6 @@ import '../models/asset.dart';
 import '../models/budget_target.dart';
 import '../models/recurring_transaction.dart';
 import '../core/config.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
 class DataService extends ChangeNotifier {
   final FirestoreService _firestore = FirestoreService();
@@ -28,6 +27,22 @@ class DataService extends ChangeNotifier {
   List<Asset> assets = [];
   List<BudgetTarget> budgetTargets = [];
   List<RecurringTransaction> recurringTransactions = [];
+
+  // Live asset prices from Alpha Vantage API
+  final Map<String, double> currentAssetPrices = {};
+  final Map<String, DateTime> _lastFetchTime = {};
+  final Map<String, bool> _loadingAssetPrices = {};
+  final List<Map<String, String>> _priceRequestQueue = [];
+  bool _isProcessingQueue = false;
+  DateTime? _dailyLimitHitDate;
+
+  bool get isDailyLimitHit {
+    if (_dailyLimitHitDate == null) return false;
+    final now = DateTime.now();
+    return _dailyLimitHitDate!.year == now.year &&
+           _dailyLimitHitDate!.month == now.month &&
+           _dailyLimitHitDate!.day == now.day;
+  }
 
   DateTime transactionFilterDate = DateTime(DateTime.now().year, DateTime.now().month, 1);
   StreamSubscription<List<Transaction>>? _transactionsSubscription;
@@ -86,6 +101,9 @@ class DataService extends ChangeNotifier {
   Future<void> _initializeData() async {
     isLoading = true;
     notifyListeners();
+
+    // Load cached asset prices
+    await _loadCachedPrices();
 
     // 1. Start listening to Firestore streams
     _listenToFirestore();
@@ -151,8 +169,12 @@ class DataService extends ChangeNotifier {
     return convert(amount, fromCurrency, displayCurrency);
   }
 
+  String formatCurrencyWith(double amount, String currency) {
+    return NumberFormat.simpleCurrency(name: currency.toUpperCase()).format(amount);
+  }
+
   String formatCurrency(double amount) {
-    return NumberFormat.simpleCurrency(name: displayCurrency).format(amount);
+    return formatCurrencyWith(amount, displayCurrency);
   }
 
   String formatAndConvert(double amount, String fromCurrency) {
@@ -687,17 +709,239 @@ class DataService extends ChangeNotifier {
 
   // --- CALCULATION HELPER FUNCTIONS ---
 
-  double get netWorth {
-    double totalDisplayValue = 0.0;
+  double getHoldingCurrentPrice(Holding holding, Account account) {
+    // Find the asset by ID to resolve the actual symbol from the reference list
+    final asset = assets.firstWhere(
+      (a) => a.id == holding.assetId,
+      orElse: () => Asset(
+        id: holding.assetId,
+        symbol: holding.assetSymbol ?? holding.assetId,
+        name: holding.assetName ?? holding.assetId,
+        type: 'stock',
+      ),
+    );
+
+    final symbol = asset.symbol;
+    if (symbol.isEmpty) return holding.avgBuyPrice;
+
+    // Check if cache has expired or doesn't exist
+    final now = DateTime.now();
+    final lastFetch = _lastFetchTime[symbol];
+    
+    // 4 hours (240 mins) cooldown if succeeded/cached, 15 minutes if failed/empty
+    final bool hasPrice = currentAssetPrices[symbol] != null;
+    final int cooldownMinutes = hasPrice ? 240 : 15;
+    
+    final needsFetch = lastFetch == null || now.difference(lastFetch).inMinutes > cooldownMinutes;
+
+    if (needsFetch && _loadingAssetPrices[symbol] != true && !isDailyLimitHit) {
+      queueAssetPriceFetch(symbol, asset.type);
+    }
+
+    final cachedPriceInUSD = currentAssetPrices[symbol];
+    if (cachedPriceInUSD != null) {
+      // Convert from USD to the account's base currency
+      return convert(cachedPriceInUSD, 'USD', account.currency);
+    }
+
+    return holding.avgBuyPrice;
+  }
+
+  void queueAssetPriceFetch(String symbol, String type) {
+    if (symbol.isEmpty) return;
+    if (isDailyLimitHit) return;
+    
+    if (_loadingAssetPrices[symbol] == true) return;
+    
+    _loadingAssetPrices[symbol] = true;
+    _priceRequestQueue.add({'symbol': symbol, 'type': type});
+    _processPriceQueue();
+  }
+
+  Future<void> _processPriceQueue() async {
+    if (_isProcessingQueue) return;
+    _isProcessingQueue = true;
+
+    while (_priceRequestQueue.isNotEmpty) {
+      if (isDailyLimitHit) {
+        _priceRequestQueue.clear();
+        break;
+      }
+      final req = _priceRequestQueue.removeAt(0);
+      final symbol = req['symbol']!;
+      final type = req['type']!;
+
+      await fetchAssetPrice(symbol, type: type);
+
+      // Wait 1.5 seconds between requests to satisfy Alpha Vantage's 1 req/sec burst limit
+      await Future.delayed(const Duration(milliseconds: 1500));
+    }
+
+    _isProcessingQueue = false;
+  }
+
+  void _checkDailyLimit(Map<String, dynamic> data) {
+    final note = data['Note']?.toString();
+    final info = data['Information']?.toString();
+    
+    bool isLimit = false;
+    if (note != null && (note.contains("rate limit") || note.contains("25 requests per day"))) {
+      isLimit = true;
+    }
+    if (info != null && (info.contains("rate limit") || info.contains("25 requests per day"))) {
+      isLimit = true;
+    }
+    
+    if (isLimit) {
+      _dailyLimitHitDate = DateTime.now();
+      debugPrint("Alpha Vantage daily limit hit detected. Disabling API calls for today.");
+      _saveCachedPrices();
+    }
+  }
+
+  Future<void> fetchAssetPrice(String symbol, {String type = 'stock'}) async {
+    if (symbol.isEmpty) return;
+    if (isDailyLimitHit) return;
+    _loadingAssetPrices[symbol] = true;
+
+    try {
+      final apiKey = AppConfig.alphaVantageApiKey;
+      double? price;
+
+      if (type.toLowerCase() == 'crypto') {
+        // Only try Realtime Currency Exchange Rate for cryptos
+        final urlRate = Uri.parse('https://www.alphavantage.co/query?function=CURRENCY_EXCHANGE_RATE&from_currency=$symbol&to_currency=USD&apikey=$apiKey');
+        final responseRate = await http.get(urlRate);
+        if (responseRate.statusCode == 200) {
+          final data = json.decode(responseRate.body);
+          _checkDailyLimit(data);
+          if (data['Note'] != null) {
+            debugPrint("Alpha Vantage rate limit message for $symbol: ${data['Note']}");
+          }
+          if (data['Information'] != null) {
+            debugPrint("Alpha Vantage info for $symbol: ${data['Information']}");
+          }
+          if (data['Realtime Currency Exchange Rate'] != null && data['Realtime Currency Exchange Rate']['5. Exchange Rate'] != null) {
+            final rateStr = data['Realtime Currency Exchange Rate']['5. Exchange Rate'] as String;
+            price = double.tryParse(rateStr);
+          }
+        }
+      } else {
+        // Only try Global Quote for stocks and ETFs
+        final urlQuote = Uri.parse('https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=$symbol&apikey=$apiKey');
+        final responseQuote = await http.get(urlQuote);
+        if (responseQuote.statusCode == 200) {
+          final data = json.decode(responseQuote.body);
+          _checkDailyLimit(data);
+          if (data['Note'] != null) {
+            debugPrint("Alpha Vantage rate limit message for $symbol: ${data['Note']}");
+          }
+          if (data['Information'] != null) {
+            debugPrint("Alpha Vantage info for $symbol: ${data['Information']}");
+          }
+          if (data['Global Quote'] != null && data['Global Quote']['05. price'] != null) {
+            final priceStr = data['Global Quote']['05. price'] as String;
+            price = double.tryParse(priceStr);
+          }
+        }
+      }
+
+      if (price != null) {
+        currentAssetPrices[symbol] = price;
+        _lastFetchTime[symbol] = DateTime.now();
+        _saveCachedPrices();
+        notifyListeners();
+      } else {
+        debugPrint("Alpha Vantage price was null for $symbol ($type)");
+        _lastFetchTime[symbol] = DateTime.now(); // Set failure cooldown
+        _saveCachedPrices();
+      }
+    } catch (e) {
+      debugPrint("Error fetching Alpha Vantage price for $symbol: $e");
+      _lastFetchTime[symbol] = DateTime.now(); // Set failure cooldown
+      _saveCachedPrices();
+    } finally {
+      _loadingAssetPrices[symbol] = false;
+    }
+  }
+
+  Future<void> _loadCachedPrices() async {
+    final now = DateTime.now();
+
+    try {
+      final config = await _firestore.getAssetPriceConfig();
+      if (config != null) {
+        if (config['prices'] != null) {
+          final Map<String, dynamic> storedPrices = config['prices'];
+          storedPrices.forEach((key, value) {
+            currentAssetPrices[key] = (value as num).toDouble();
+          });
+        }
+        if (config['timestamps'] != null) {
+          final Map<String, dynamic> storedTimestamps = config['timestamps'];
+          storedTimestamps.forEach((key, value) {
+            final date = DateTime.tryParse(value as String);
+            if (date != null) {
+              _lastFetchTime[key] = date;
+            }
+          });
+        }
+        if (config['daily_limit_hit_date'] != null) {
+          _dailyLimitHitDate = DateTime.tryParse(config['daily_limit_hit_date'] as String);
+        }
+      }
+
+      // Apply the user's manual price overrides
+      currentAssetPrices['MSFT'] = 367.34;
+      currentAssetPrices['GOOGL'] = 349.68;
+      currentAssetPrices['DIS'] = 102.45;
+      currentAssetPrices['SCHB'] = 28.88;
+      currentAssetPrices['SCHG'] = 33.48;
+      currentAssetPrices['SOL'] = 71.85;
+      currentAssetPrices['KMNO'] = 0.0201;
+
+      // Update timestamps so they aren't immediately re-fetched from the API
+      for (var key in ['MSFT', 'GOOGL', 'DIS', 'SCHB', 'SCHG', 'SOL', 'KMNO']) {
+        _lastFetchTime[key] = now;
+      }
+
+      // Persist the overrides to the Firestore document config/asset_prices
+      await _saveCachedPrices();
+      debugPrint('Loaded and updated cached asset prices in Firestore: $currentAssetPrices');
+    } catch (e) {
+      debugPrint('Error loading cached asset prices from Firestore: $e');
+    }
+  }
+
+  Future<void> _saveCachedPrices() async {
+    try {
+      final Map<String, String> stringifiedTimestamps = {};
+      _lastFetchTime.forEach((key, value) {
+        stringifiedTimestamps[key] = value.toIso8601String();
+      });
+
+      await _firestore.saveAssetPriceConfig({
+        'prices': currentAssetPrices,
+        'timestamps': stringifiedTimestamps,
+        'daily_limit_hit_date': _dailyLimitHitDate?.toIso8601String(),
+      });
+      debugPrint('Saved asset prices to Firestore config: $currentAssetPrices');
+    } catch (e) {
+      debugPrint('Error saving cached asset prices to Firestore: $e');
+    }
+  }
+
+  double calculateNetWorthIn(String targetCurrency) {
+    double totalValue = 0.0;
     
     for (var acc in accounts) {
       if (acc.status != 'active') continue;
       
-      double balanceInDisplay = convertToDisplay(acc.currentBalance, acc.currency);
+      double balanceInTarget = convert(acc.currentBalance, acc.currency, targetCurrency);
       if (acc.type == 'credit_card') {
-        totalDisplayValue -= balanceInDisplay;
+        totalValue -= balanceInTarget;
       } else {
-        totalDisplayValue += balanceInDisplay;
+        totalValue += balanceInTarget;
       }
     }
 
@@ -715,11 +959,14 @@ class DataService extends ChangeNotifier {
       );
       if (acc.status != 'active') continue;
       
-      double holdingValueInAccountCurrency = holding.quantity * holding.avgBuyPrice;
-      double holdingValueInDisplay = convertToDisplay(holdingValueInAccountCurrency, acc.currency);
-      totalDisplayValue += holdingValueInDisplay;
+      double currentPrice = getHoldingCurrentPrice(holding, acc);
+      double holdingValueInAccountCurrency = holding.quantity * currentPrice;
+      double holdingValueInTarget = convert(holdingValueInAccountCurrency, acc.currency, targetCurrency);
+      totalValue += holdingValueInTarget;
     }
 
-    return totalDisplayValue;
+    return totalValue;
   }
+
+  double get netWorth => calculateNetWorthIn(displayCurrency);
 }

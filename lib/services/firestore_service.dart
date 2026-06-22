@@ -129,6 +129,20 @@ class FirestoreService {
     await _db.collection('config').doc('currency_rates').set(data);
   }
 
+  // --- ASSET PRICES ---
+  Future<Map<String, dynamic>?> getAssetPriceConfig() async {
+    try {
+      final doc = await _db.collection('config').doc('asset_prices').get();
+      return doc.data();
+    } catch (e) {
+      return null;
+    }
+  }
+
+  Future<void> saveAssetPriceConfig(Map<String, dynamic> data) async {
+    await _db.collection('config').doc('asset_prices').set(data);
+  }
+
   // --- ENABLED CURRENCIES ---
   Stream<List<String>> streamEnabledCurrencies() {
     return _db.collection('config').doc('currency_preferences').snapshots().map((snapshot) {

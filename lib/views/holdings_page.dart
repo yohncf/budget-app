@@ -33,6 +33,16 @@ class _HoldingsPageState extends State<HoldingsPage> {
   DateTime _selectedDate = DateTime.now();
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        Provider.of<DataService>(context, listen: false).setDisplayCurrency('USD');
+      }
+    });
+  }
+
+  @override
   void dispose() {
     _symbolController.dispose();
     _nameController.dispose();
@@ -48,10 +58,6 @@ class _HoldingsPageState extends State<HoldingsPage> {
     txs.sort((a, b) => a.executedAt.compareTo(b.executedAt));
 
     if (txs.isEmpty) return [];
-
-    final Map<String, double> runningQuantities = {};
-    final Map<String, double> runningPrices = {};
-    final Map<String, String> runningCurrencies = {};
 
     final List<Map<String, dynamic>> dataPoints = [];
 
@@ -71,6 +77,7 @@ class _HoldingsPageState extends State<HoldingsPage> {
       endDate = startDate;
     }
 
+    double cumulativeValue = 0.0;
     DateTime currentDay = startDate;
     int safetyCounter = 0;
     while (!currentDay.isAfter(endDate) && safetyCounter < 3650) {
@@ -79,19 +86,10 @@ class _HoldingsPageState extends State<HoldingsPage> {
 
       if (txsByDate.containsKey(dateKey)) {
         for (var tx in txsByDate[dateKey]!) {
-          final assetId = tx.assetId;
-          double qty = runningQuantities[assetId] ?? 0.0;
-
-          if (tx.type == 'buy' || tx.type == 'dividend_reinvest' || tx.type == 'reward') {
-            qty += tx.quantity;
-          } else if (tx.type == 'sell') {
-            qty -= tx.quantity;
-          } else if (tx.type == 'split') {
-            qty *= tx.quantity;
+          if (tx.type.toLowerCase() == 'split') {
+            // Split doesn't alter the value of the portfolio at that moment
+            continue;
           }
-
-          runningQuantities[assetId] = qty;
-          runningPrices[assetId] = tx.unitPrice;
 
           final account = service.accounts.firstWhere(
             (a) => a.id == tx.accountId,
@@ -104,24 +102,22 @@ class _HoldingsPageState extends State<HoldingsPage> {
               updatedAt: DateTime.now(),
             ),
           );
-          runningCurrencies[assetId] = account.currency;
+
+          final txValue = tx.quantity * tx.unitPrice;
+          final txValueInDisplay = service.convertToDisplay(txValue, account.currency);
+
+          if (tx.type.toLowerCase() == 'sell') {
+            cumulativeValue -= txValueInDisplay;
+          } else {
+            // buy, dividend_reinvest, reward
+            cumulativeValue += txValueInDisplay;
+          }
         }
       }
 
-      double totalVal = 0.0;
-      runningQuantities.forEach((aid, q) {
-        if (q > 0) {
-          final price = runningPrices[aid] ?? 0.0;
-          final currency = runningCurrencies[aid] ?? 'USD';
-          final valInAcc = q * price;
-          final valInDisplay = service.convertToDisplay(valInAcc, currency);
-          totalVal += valInDisplay;
-        }
-      });
-
       dataPoints.add({
         'date': currentDay,
-        'value': totalVal,
+        'value': cumulativeValue,
       });
 
       currentDay = DateTime(currentDay.year, currentDay.month, currentDay.day + 1);
@@ -134,6 +130,7 @@ class _HoldingsPageState extends State<HoldingsPage> {
   Widget build(BuildContext context) {
     final dataService = Provider.of<DataService>(context);
     final isMobile = MediaQuery.of(context).size.width < 600;
+    final isDesktop = MediaQuery.of(context).size.width >= 900;
     
     // Group active holdings (quantity > 0) by asset type
     final activeHoldings = dataService.holdings.where((h) => h.quantity > 0.0).toList();
@@ -206,8 +203,29 @@ class _HoldingsPageState extends State<HoldingsPage> {
                 ),
                 const SizedBox(height: 24),
 
-                // Graph Card
-                _buildValuationGraphCard(context, dataService),
+                // Graph Card and Net Worth side by side on desktop, stacked on mobile
+                !isDesktop
+                    ? Column(
+                        children: [
+                          _buildNetWorthCard(context, dataService),
+                          const SizedBox(height: 24),
+                          _buildValuationGraphCard(context, dataService),
+                        ],
+                      )
+                    : Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            flex: 3,
+                            child: _buildValuationGraphCard(context, dataService),
+                          ),
+                          const SizedBox(width: 24),
+                          Expanded(
+                            flex: 2,
+                            child: _buildNetWorthCard(context, dataService),
+                          ),
+                        ],
+                      ),
                 const SizedBox(height: 24),
 
                 // Holdings Group Lists
@@ -388,6 +406,73 @@ class _HoldingsPageState extends State<HoldingsPage> {
     );
   }
 
+  Widget _buildNetWorthCard(BuildContext context, DataService service) {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        gradient: AppTheme.primaryGradient,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: AppTheme.mainAction.withOpacity(0.2),
+            blurRadius: 15,
+            offset: const Offset(0, 8),
+          )
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 18.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'NET WORTH',
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.7),
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 1.5,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              service.formatCurrencyWith(service.calculateNetWorthIn('USD'), 'USD'),
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 28,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '≈ ${service.formatCurrencyWith(service.calculateNetWorthIn('MXN'), 'MXN')} MXN',
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.8),
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Icon(Icons.trending_up, color: Colors.white.withOpacity(0.9), size: 14),
+                const SizedBox(width: 6),
+                Text(
+                  '+12.4% this month',
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.9),
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildHoldingsSection(BuildContext context, Map<String, List<Holding>> groups, DataService service) {
     final list = <Widget>[];
 
@@ -408,11 +493,12 @@ class _HoldingsPageState extends State<HoldingsPage> {
               ? AppTheme.mainAction 
               : AppTheme.accentCyan;
 
-      // Calculate category sum
+      // Calculate category sum using current value
       double categoryTotal = 0.0;
       for (var h in holdings) {
         final acc = service.accounts.firstWhere((a) => a.id == h.accountId, orElse: () => Account(id: '', name: '', type: 'checking', currency: 'USD', createdAt: DateTime.now(), updatedAt: DateTime.now()));
-        final holdingValInDisplay = service.convertToDisplay(h.quantity * h.avgBuyPrice, acc.currency);
+        final currentPrice = service.getHoldingCurrentPrice(h, acc);
+        final holdingValInDisplay = service.convertToDisplay(h.quantity * currentPrice, acc.currency);
         categoryTotal += holdingValInDisplay;
       }
 
@@ -444,11 +530,19 @@ class _HoldingsPageState extends State<HoldingsPage> {
                 ),
               ],
             ),
-            childrenPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+             childrenPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             children: holdings.map((h) {
               final acc = service.accounts.firstWhere((a) => a.id == h.accountId, orElse: () => Account(id: '', name: '', type: 'checking', currency: 'USD', createdAt: DateTime.now(), updatedAt: DateTime.now()));
-              final holdingValInDisplay = service.convertToDisplay(h.quantity * h.avgBuyPrice, acc.currency);
+              final currentPrice = service.getHoldingCurrentPrice(h, acc);
               final displayPrice = service.convertToDisplay(h.avgBuyPrice, acc.currency);
+              final displayCurrentPrice = service.convertToDisplay(currentPrice, acc.currency);
+              final holdingValInDisplay = service.convertToDisplay(h.quantity * currentPrice, acc.currency);
+
+              final totalCost = h.quantity * h.avgBuyPrice;
+              final currentValue = h.quantity * currentPrice;
+              final gainLoss = currentValue - totalCost;
+              final displayGainLoss = service.convertToDisplay(gainLoss, acc.currency);
+              final roiPct = totalCost > 0 ? (gainLoss / totalCost) * 100 : 0.0;
 
               final asset = service.assets.firstWhere(
                 (a) => a.id == h.assetId,
@@ -474,7 +568,7 @@ class _HoldingsPageState extends State<HoldingsPage> {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          'Qty: ${h.quantity.toStringAsFixed(4)}  •  Avg: ${service.formatCurrency(displayPrice)}',
+                          'Qty: ${h.quantity.toStringAsFixed(4)}  •  Avg: ${service.formatCurrency(displayPrice)}  •  Cur: ${service.formatCurrency(displayCurrentPrice)}',
                           style: Theme.of(context).textTheme.bodyMedium,
                         ),
                         const SizedBox(height: 2),
@@ -484,9 +578,33 @@ class _HoldingsPageState extends State<HoldingsPage> {
                         ),
                       ],
                     ),
-                    Text(
-                      service.formatCurrency(holdingValInDisplay),
-                      style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 16),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text(
+                          service.formatCurrency(holdingValInDisplay),
+                          style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 16),
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              displayGainLoss >= 0 ? Icons.arrow_drop_up : Icons.arrow_drop_down,
+                              color: displayGainLoss >= 0 ? AppTheme.successGreen : AppTheme.dangerRed,
+                              size: 16,
+                            ),
+                            Text(
+                              '${displayGainLoss >= 0 ? '+' : ''}${service.formatCurrency(displayGainLoss)} (${roiPct.toStringAsFixed(2)}%)',
+                              style: TextStyle(
+                                color: displayGainLoss >= 0 ? AppTheme.successGreen : AppTheme.dangerRed,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -496,6 +614,188 @@ class _HoldingsPageState extends State<HoldingsPage> {
         ),
       );
     });
+
+    // Query active accounts to add PPR, Savings Fund, and Afore to the bottom of the asset allocation
+    final List<String> targetNames = ['ppr', 'savings fund', 'afore', 'fondo de ahorro'];
+    final List<Account> matchedAccounts = [];
+    
+    for (var acc in service.accounts) {
+      if (acc.status != 'active') continue;
+      final nameLower = acc.name.toLowerCase();
+      if (targetNames.any((target) => nameLower.contains(target))) {
+        matchedAccounts.add(acc);
+      }
+    }
+
+    // Sort priority: PPR -> Savings Fund -> Afore
+    matchedAccounts.sort((a, b) {
+      int getPriority(String name) {
+        final n = name.toLowerCase();
+        if (n.contains('ppr')) return 1;
+        if (n.contains('savings fund') || n.contains('fondo de ahorro')) return 2;
+        if (n.contains('afore')) return 3;
+        return 4;
+      }
+      return getPriority(a.name).compareTo(getPriority(b.name));
+    });
+
+    for (var account in matchedAccounts) {
+      final accountHoldings = service.holdings.where((h) => h.accountId == account.id && h.quantity > 0.0).toList();
+      double holdingsVal = accountHoldings.fold(0.0, (sum, item) => sum + service.convertToDisplay(item.quantity * service.getHoldingCurrentPrice(item, account), account.currency));
+      double totalDisplayVal = service.convertToDisplay(account.currentBalance, account.currency) + holdingsVal;
+
+      final nameLower = account.name.toLowerCase();
+      Color accountColor = AppTheme.mainAction;
+      if (nameLower.contains('ppr')) {
+        accountColor = const Color(0xFF8B5CF6); // Purple
+      } else if (nameLower.contains('savings fund') || nameLower.contains('fondo de ahorro')) {
+        accountColor = AppTheme.successGreen; // Green
+      } else if (nameLower.contains('afore')) {
+        accountColor = const Color(0xFFF59E0B); // Orange
+      }
+
+      list.add(
+        Card(
+          margin: const EdgeInsets.only(bottom: 16),
+          child: ExpansionTile(
+            initiallyExpanded: false,
+            title: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 10,
+                      height: 10,
+                      decoration: BoxDecoration(color: accountColor, shape: BoxShape.circle),
+                    ),
+                    const SizedBox(width: 10),
+                    Text(
+                      account.name,
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(fontSize: 16, fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
+                Text(
+                  service.formatCurrency(totalDisplayVal),
+                  style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 16, color: accountColor),
+                ),
+              ],
+            ),
+            childrenPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            children: [
+              if (account.currentBalance != 0.0)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8.0),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Cash Balance',
+                            style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold, color: AppTheme.textSecondary),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Held in: ${account.currency}',
+                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 10),
+                          ),
+                        ],
+                      ),
+                      Text(
+                        service.formatAndConvert(account.currentBalance, account.currency),
+                        style: GoogleFonts.outfit(fontSize: 15, fontWeight: FontWeight.w600, color: AppTheme.textSecondary),
+                      ),
+                    ],
+                  ),
+                ),
+              ...accountHoldings.map((h) {
+                final currentPrice = service.getHoldingCurrentPrice(h, account);
+                final displayPrice = service.convertToDisplay(h.avgBuyPrice, account.currency);
+                final displayCurrentPrice = service.convertToDisplay(currentPrice, account.currency);
+                final holdingValInDisplay = service.convertToDisplay(h.quantity * currentPrice, account.currency);
+
+                final totalCost = h.quantity * h.avgBuyPrice;
+                final currentValue = h.quantity * currentPrice;
+                final gainLoss = currentValue - totalCost;
+                final displayGainLoss = service.convertToDisplay(gainLoss, account.currency);
+                final roiPct = totalCost > 0 ? (gainLoss / totalCost) * 100 : 0.0;
+                
+                final asset = service.assets.firstWhere(
+                  (a) => a.id == h.assetId,
+                  orElse: () => Asset(
+                    id: h.assetId,
+                    symbol: h.assetSymbol ?? h.assetId,
+                    name: h.assetName ?? 'Unknown Asset',
+                    type: 'stock',
+                  ),
+                );
+
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8.0),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '${asset.name} (${asset.symbol})',
+                            style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Qty: ${h.quantity.toStringAsFixed(4)}  •  Avg: ${service.formatCurrency(displayPrice)}  •  Cur: ${service.formatCurrency(displayCurrentPrice)}',
+                            style: Theme.of(context).textTheme.bodyMedium,
+                          ),
+                        ],
+                      ),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(
+                            service.formatCurrency(holdingValInDisplay),
+                            style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 16),
+                          ),
+                          const SizedBox(height: 4),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                displayGainLoss >= 0 ? Icons.arrow_drop_up : Icons.arrow_drop_down,
+                                color: displayGainLoss >= 0 ? AppTheme.successGreen : AppTheme.dangerRed,
+                                size: 16,
+                              ),
+                              Text(
+                                '${displayGainLoss >= 0 ? '+' : ''}${service.formatCurrency(displayGainLoss)} (${roiPct.toStringAsFixed(2)}%)',
+                                style: TextStyle(
+                                  color: displayGainLoss >= 0 ? AppTheme.successGreen : AppTheme.dangerRed,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                );
+              }),
+              if (account.currentBalance == 0.0 && accountHoldings.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 8.0),
+                  child: Center(
+                    child: Text('No cash balance or holdings recorded.', style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      );
+    }
 
     if (list.isEmpty) {
       return const Center(

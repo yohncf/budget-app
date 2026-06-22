@@ -91,6 +91,7 @@ class MainLayout extends StatefulWidget {
 
 class _MainLayoutState extends State<MainLayout> {
   int _selectedIndex = 0;
+  bool _isDrawerOpenOnDesktop = true;
 
   final List<Widget> _pages = [
     const DashboardPage(),
@@ -104,9 +105,176 @@ class _MainLayoutState extends State<MainLayout> {
     super.initState();
   }
 
+  Widget _buildDrawerContent(BuildContext context, {required bool isDesktop}) {
+    return Material(
+      color: Colors.transparent,
+      child: Column(
+        children: [
+          DrawerHeader(
+            decoration: const BoxDecoration(
+              color: Color(0xFF1D1D2C),
+            ),
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Image.asset(
+                    'assets/images/app_logo.png',
+                    width: 64,
+                    height: 64,
+                    errorBuilder: (context, error, stackTrace) => const Icon(Icons.analytics, size: 48, color: AppTheme.mainAction),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Budget App Ledger',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          Expanded(
+            child: ListView(
+              padding: EdgeInsets.zero,
+              children: [
+                ListTile(
+                  leading: Icon(
+                    _selectedIndex == 0 ? Icons.dashboard : Icons.dashboard_outlined,
+                    color: _selectedIndex == 0 ? AppTheme.mainAction : AppTheme.textSecondary,
+                  ),
+                  title: Text(
+                    'Dashboard',
+                    style: TextStyle(
+                      color: _selectedIndex == 0 ? Colors.white : AppTheme.textSecondary,
+                      fontWeight: _selectedIndex == 0 ? FontWeight.bold : FontWeight.normal,
+                    ),
+                  ),
+                  selected: _selectedIndex == 0,
+                  selectedTileColor: AppTheme.mainAction.withOpacity(0.1),
+                  onTap: () {
+                    setState(() {
+                      _selectedIndex = 0;
+                    });
+                    if (!isDesktop) {
+                      Navigator.pop(context);
+                    }
+                  },
+                ),
+                ListTile(
+                  leading: Icon(
+                    _selectedIndex == 1 ? Icons.list_alt : Icons.list_alt_outlined,
+                    color: _selectedIndex == 1 ? AppTheme.mainAction : AppTheme.textSecondary,
+                  ),
+                  title: Text(
+                    'Ledger',
+                    style: TextStyle(
+                      color: _selectedIndex == 1 ? Colors.white : AppTheme.textSecondary,
+                      fontWeight: _selectedIndex == 1 ? FontWeight.bold : FontWeight.normal,
+                    ),
+                  ),
+                  selected: _selectedIndex == 1,
+                  selectedTileColor: AppTheme.mainAction.withOpacity(0.1),
+                  onTap: () {
+                    setState(() {
+                      _selectedIndex = 1;
+                    });
+                    if (!isDesktop) {
+                      Navigator.pop(context);
+                    }
+                  },
+                ),
+                ListTile(
+                  leading: Icon(
+                    _selectedIndex == 2 ? Icons.account_balance_wallet : Icons.account_balance_wallet_outlined,
+                    color: _selectedIndex == 2 ? AppTheme.mainAction : AppTheme.textSecondary,
+                  ),
+                  title: Text(
+                    'Accounts',
+                    style: TextStyle(
+                      color: _selectedIndex == 2 ? Colors.white : AppTheme.textSecondary,
+                      fontWeight: _selectedIndex == 2 ? FontWeight.bold : FontWeight.normal,
+                    ),
+                  ),
+                  selected: _selectedIndex == 2,
+                  selectedTileColor: AppTheme.mainAction.withOpacity(0.1),
+                  onTap: () {
+                    setState(() {
+                      _selectedIndex = 2;
+                    });
+                    if (!isDesktop) {
+                      Navigator.pop(context);
+                    }
+                  },
+                ),
+                ListTile(
+                  leading: Icon(
+                    _selectedIndex == 3 ? Icons.pie_chart : Icons.pie_chart_outline,
+                    color: _selectedIndex == 3 ? AppTheme.mainAction : AppTheme.textSecondary,
+                  ),
+                  title: Text(
+                    'Holdings',
+                    style: TextStyle(
+                      color: _selectedIndex == 3 ? Colors.white : AppTheme.textSecondary,
+                      fontWeight: _selectedIndex == 3 ? FontWeight.bold : FontWeight.normal,
+                    ),
+                  ),
+                  selected: _selectedIndex == 3,
+                  selectedTileColor: AppTheme.mainAction.withOpacity(0.1),
+                  onTap: () {
+                    setState(() {
+                      _selectedIndex = 3;
+                    });
+                    if (!isDesktop) {
+                      Navigator.pop(context);
+                    }
+                  },
+                ),
+              ],
+            ),
+          ),
+          const Divider(color: Color(0xFF23232A), height: 1),
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Row(
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.settings, color: AppTheme.textSecondary),
+                  tooltip: 'Settings',
+                  onPressed: () {
+                    if (!isDesktop) {
+                      Navigator.pop(context); // close drawer
+                    }
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => const SettingsPage()),
+                    );
+                  },
+                ),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.logout, color: Colors.redAccent),
+                  tooltip: 'Logout',
+                  onPressed: () async {
+                    await FirebaseAuth.instance.signOut();
+                  },
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    final bool isDesktop = MediaQuery.of(context).size.width >= 900;
+
+    final Widget mainScaffold = Scaffold(
       appBar: AppBar(
         backgroundColor: AppTheme.darkCard,
         elevation: 0,
@@ -118,8 +286,16 @@ class _MainLayoutState extends State<MainLayout> {
               height: 32,
               errorBuilder: (context, error, stackTrace) => const Icon(Icons.analytics, size: 28, color: AppTheme.mainAction),
             ),
-            tooltip: 'Open menu',
-            onPressed: () => Scaffold.of(context).openDrawer(),
+            tooltip: isDesktop ? 'Toggle sidebar' : 'Open menu',
+            onPressed: () {
+              if (isDesktop) {
+                setState(() {
+                  _isDrawerOpenOnDesktop = !_isDrawerOpenOnDesktop;
+                });
+              } else {
+                Scaffold.of(context).openDrawer();
+              }
+            },
           ),
         ),
         title: Text(
@@ -195,157 +371,9 @@ class _MainLayoutState extends State<MainLayout> {
           ),
         ],
       ),
-      drawer: Drawer(
+      drawer: isDesktop ? null : Drawer(
         backgroundColor: AppTheme.darkCard,
-        child: Column(
-          children: [
-            DrawerHeader(
-              decoration: const BoxDecoration(
-                color: Color(0xFF1D1D2C),
-              ),
-              child: Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Image.asset(
-                      'assets/images/app_logo.png',
-                      width: 64,
-                      height: 64,
-                      errorBuilder: (context, error, stackTrace) => const Icon(Icons.analytics, size: 48, color: AppTheme.mainAction),
-                    ),
-                    const SizedBox(height: 12),
-                    const Text(
-                      'Budget App Ledger',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            Expanded(
-              child: ListView(
-                padding: EdgeInsets.zero,
-                children: [
-                  ListTile(
-                    leading: Icon(
-                      _selectedIndex == 0 ? Icons.dashboard : Icons.dashboard_outlined,
-                      color: _selectedIndex == 0 ? AppTheme.mainAction : AppTheme.textSecondary,
-                    ),
-                    title: Text(
-                      'Dashboard',
-                      style: TextStyle(
-                        color: _selectedIndex == 0 ? Colors.white : AppTheme.textSecondary,
-                        fontWeight: _selectedIndex == 0 ? FontWeight.bold : FontWeight.normal,
-                      ),
-                    ),
-                    selected: _selectedIndex == 0,
-                    selectedTileColor: AppTheme.mainAction.withOpacity(0.1),
-                    onTap: () {
-                      setState(() {
-                        _selectedIndex = 0;
-                      });
-                      Navigator.pop(context);
-                    },
-                  ),
-                  ListTile(
-                    leading: Icon(
-                      _selectedIndex == 1 ? Icons.list_alt : Icons.list_alt_outlined,
-                      color: _selectedIndex == 1 ? AppTheme.mainAction : AppTheme.textSecondary,
-                    ),
-                    title: Text(
-                      'Ledger',
-                      style: TextStyle(
-                        color: _selectedIndex == 1 ? Colors.white : AppTheme.textSecondary,
-                        fontWeight: _selectedIndex == 1 ? FontWeight.bold : FontWeight.normal,
-                      ),
-                    ),
-                    selected: _selectedIndex == 1,
-                    selectedTileColor: AppTheme.mainAction.withOpacity(0.1),
-                    onTap: () {
-                      setState(() {
-                        _selectedIndex = 1;
-                      });
-                      Navigator.pop(context);
-                    },
-                  ),
-                  ListTile(
-                    leading: Icon(
-                      _selectedIndex == 2 ? Icons.account_balance_wallet : Icons.account_balance_wallet_outlined,
-                      color: _selectedIndex == 2 ? AppTheme.mainAction : AppTheme.textSecondary,
-                    ),
-                    title: Text(
-                      'Accounts',
-                      style: TextStyle(
-                        color: _selectedIndex == 2 ? Colors.white : AppTheme.textSecondary,
-                        fontWeight: _selectedIndex == 2 ? FontWeight.bold : FontWeight.normal,
-                      ),
-                    ),
-                    selected: _selectedIndex == 2,
-                    selectedTileColor: AppTheme.mainAction.withOpacity(0.1),
-                    onTap: () {
-                      setState(() {
-                        _selectedIndex = 2;
-                      });
-                      Navigator.pop(context);
-                    },
-                  ),
-                  ListTile(
-                    leading: Icon(
-                      _selectedIndex == 3 ? Icons.pie_chart : Icons.pie_chart_outline,
-                      color: _selectedIndex == 3 ? AppTheme.mainAction : AppTheme.textSecondary,
-                    ),
-                    title: Text(
-                      'Holdings',
-                      style: TextStyle(
-                        color: _selectedIndex == 3 ? Colors.white : AppTheme.textSecondary,
-                        fontWeight: _selectedIndex == 3 ? FontWeight.bold : FontWeight.normal,
-                      ),
-                    ),
-                    selected: _selectedIndex == 3,
-                    selectedTileColor: AppTheme.mainAction.withOpacity(0.1),
-                    onTap: () {
-                      setState(() {
-                        _selectedIndex = 3;
-                      });
-                      Navigator.pop(context);
-                    },
-                  ),
-                ],
-              ),
-            ),
-            const Divider(color: Color(0xFF23232A), height: 1),
-            Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Row(
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.settings, color: AppTheme.textSecondary),
-                    tooltip: 'Settings',
-                    onPressed: () {
-                      Navigator.pop(context); // close drawer
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (context) => const SettingsPage()),
-                      );
-                    },
-                  ),
-                  const Spacer(),
-                  IconButton(
-                    icon: const Icon(Icons.logout, color: Colors.redAccent),
-                    tooltip: 'Logout',
-                    onPressed: () async {
-                      await FirebaseAuth.instance.signOut();
-                    },
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
+        child: _buildDrawerContent(context, isDesktop: false),
       ),
       body: Container(
         decoration: const BoxDecoration(
@@ -354,5 +382,27 @@ class _MainLayoutState extends State<MainLayout> {
         child: _pages[_selectedIndex],
       ),
     );
+
+    if (isDesktop) {
+      return Scaffold(
+        body: Row(
+          children: [
+            if (_isDrawerOpenOnDesktop)
+              Container(
+                width: 260,
+                color: AppTheme.darkCard,
+                child: SafeArea(
+                  child: _buildDrawerContent(context, isDesktop: true),
+                ),
+              ),
+            if (_isDrawerOpenOnDesktop)
+              const VerticalDivider(color: Color(0xFF23232A), width: 1, thickness: 1),
+            Expanded(child: mainScaffold),
+          ],
+        ),
+      );
+    }
+
+    return mainScaffold;
   }
 }

@@ -11,4 +11,8 @@ class AppConfig {
     'SUPABASE_SERVICE_ROLE_KEY',
     defaultValue: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVianZsd256Y3lvZ3hjd3pkeXBkIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MTQ4MDQzMywiZXhwIjoyMDk3MDU2NDMzfQ.LU9J_aw4yo0zmqktjrMx8qVlJTEntgqRR1zuob1Sns4',
   );
+  static const String alphaVantageApiKey = String.fromEnvironment(
+    'ALPHAVANTAGE_API_KEY',
+    defaultValue: 'RYN05MCEKCR4F107',
+  );
 }
