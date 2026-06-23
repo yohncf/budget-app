@@ -31,6 +31,7 @@ class _HoldingsPageState extends State<HoldingsPage> {
   String _selectedAssetType = 'stock'; // stock, crypto, etf
   String _selectedTxType = 'buy'; // buy, sell, dividend_reinvest, split, reward
   DateTime _selectedDate = DateTime.now();
+  int _selectedGroupIndex = -1;
 
   @override
   void initState() {
@@ -203,11 +204,13 @@ class _HoldingsPageState extends State<HoldingsPage> {
                 ),
                 const SizedBox(height: 24),
 
-                // Graph Card and Net Worth side by side on desktop, stacked on mobile
+                // Graph Card, Net Worth, and Portfolio Distribution side by side on desktop, stacked on mobile
                 !isDesktop
                     ? Column(
                         children: [
                           _buildNetWorthCard(context, dataService),
+                          const SizedBox(height: 16),
+                          _buildAccountGroupPieChart(context, dataService),
                           const SizedBox(height: 24),
                           _buildValuationGraphCard(context, dataService),
                         ],
@@ -222,7 +225,13 @@ class _HoldingsPageState extends State<HoldingsPage> {
                           const SizedBox(width: 24),
                           Expanded(
                             flex: 2,
-                            child: _buildNetWorthCard(context, dataService),
+                            child: Column(
+                              children: [
+                                _buildNetWorthCard(context, dataService),
+                                const SizedBox(height: 24),
+                                _buildAccountGroupPieChart(context, dataService),
+                              ],
+                            ),
                           ),
                         ],
                       ),
@@ -314,7 +323,7 @@ class _HoldingsPageState extends State<HoldingsPage> {
             ),
             const SizedBox(height: 24),
             SizedBox(
-              height: 220,
+              height: 300,
               child: LineChart(
                 LineChartData(
                   minX: minX,
@@ -421,51 +430,382 @@ class _HoldingsPageState extends State<HoldingsPage> {
         ],
       ),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 18.0),
+        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 14.0),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'NET WORTH',
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.7),
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1.2,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    service.formatCurrencyWith(service.calculateNetWorthIn('USD'), 'USD'),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '≈ ${service.formatCurrencyWith(service.calculateNetWorthIn('MXN'), 'MXN')} MXN',
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.8),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.trending_up, color: Colors.white, size: 14),
+                  const SizedBox(width: 4),
+                  Text(
+                    '+12.4%',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Map<String, double> _calculateAccountGroupDistribution(DataService service) {
+    final Map<String, double> groupTotals = {};
+    final Set<String> processedAccountIds = {};
+
+    void addAccountValue(Account account, double value) {
+      if (processedAccountIds.contains(account.id)) return;
+      processedAccountIds.add(account.id);
+
+      // Exclude credit cards and checking/debit accounts from holdings/investment net worth/pie chart
+      if (account.type == 'credit_card' || account.type == 'checking') {
+        return;
+      }
+      if (account.accountGroup == 'credit' || account.accountGroup == 'liquid_assets') {
+        return;
+      }
+
+      String group = account.accountGroup ?? 'capital';
+      if (group.isEmpty) {
+        if (account.type == 'retirement') {
+          group = 'retirement';
+        } else {
+          group = 'capital';
+        }
+      }
+      
+      String displayGroup = group;
+      if (group == 'capital') {
+        displayGroup = 'Capital';
+      } else if (group == 'retirement') {
+        displayGroup = 'Retirement';
+      } else if (group == 'liquid_assets') {
+        displayGroup = 'Liquid Assets';
+      } else if (group == 'credit') {
+        displayGroup = 'Credit';
+      } else {
+        displayGroup = group[0].toUpperCase() + group.substring(1);
+      }
+
+      groupTotals[displayGroup] = (groupTotals[displayGroup] ?? 0.0) + value;
+    }
+
+    // 1. Accounts with active holdings
+    final activeHoldings = service.holdings.where((h) => h.quantity > 0.0).toList();
+    for (var h in activeHoldings) {
+      final account = service.accounts.firstWhere(
+        (a) => a.id == h.accountId,
+        orElse: () => Account(
+          id: '',
+          name: '',
+          type: 'checking',
+          currency: 'USD',
+          createdAt: DateTime.now(),
+          updatedAt: DateTime.now(),
+        ),
+      );
+      if (account.id.isEmpty || account.status != 'active') continue;
+
+      if (!processedAccountIds.contains(account.id)) {
+        final accountHoldings = service.holdings.where((sh) => sh.accountId == account.id && sh.quantity > 0.0).toList();
+        double holdingsVal = accountHoldings.fold(0.0, (sum, item) {
+          final currentPrice = service.getHoldingCurrentPrice(item, account);
+          return sum + service.convertToDisplay(item.quantity * currentPrice, account.currency);
+        });
+        double totalVal = service.convertToDisplay(account.currentBalance, account.currency) + holdingsVal;
+        addAccountValue(account, totalVal);
+      }
+    }
+
+    // 2. Matched accounts (PPR, Afore, etc.)
+    final List<String> targetNames = ['ppr', 'savings fund', 'afore', 'fondo de ahorro'];
+    for (var account in service.accounts) {
+      if (account.status != 'active') continue;
+      final nameLower = account.name.toLowerCase();
+      if (targetNames.any((target) => nameLower.contains(target))) {
+        if (!processedAccountIds.contains(account.id)) {
+          final accountHoldings = service.holdings.where((sh) => sh.accountId == account.id && sh.quantity > 0.0).toList();
+          double holdingsVal = accountHoldings.fold(0.0, (sum, item) {
+            final currentPrice = service.getHoldingCurrentPrice(item, account);
+            return sum + service.convertToDisplay(item.quantity * currentPrice, account.currency);
+          });
+          double totalVal = service.convertToDisplay(account.currentBalance, account.currency) + holdingsVal;
+          addAccountValue(account, totalVal);
+        }
+      }
+    }
+
+    return groupTotals;
+  }
+
+  Widget _buildAccountGroupPieChart(BuildContext context, DataService service) {
+    final distribution = _calculateAccountGroupDistribution(service);
+    if (distribution.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    double totalValue = distribution.values.fold(0.0, (sum, val) => sum + val);
+
+    final sortedEntries = distribution.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+
+    // Ensure selection index is within bounds
+    if (sortedEntries.isEmpty) {
+      _selectedGroupIndex = -1;
+    } else if (_selectedGroupIndex >= sortedEntries.length) {
+      _selectedGroupIndex = -1;
+    }
+
+    final List<Color> groupColors = [
+      AppTheme.accentCyan,
+      const Color(0xFF8B5CF6), // Purple
+      const Color(0xFFF59E0B), // Amber
+      const Color(0xFF10B981), // Emerald
+    ];
+
+    final List<PieChartSectionData> chartSections = [];
+    for (int i = 0; i < sortedEntries.length; i++) {
+      final entry = sortedEntries[i];
+      final sum = entry.value;
+      final color = groupColors[i % groupColors.length];
+      final isSelected = i == _selectedGroupIndex;
+      
+      chartSections.add(
+        PieChartSectionData(
+          color: color,
+          value: sum,
+          title: '', 
+          radius: isSelected ? 20.0 : 14.0, 
+          showTitle: false,
+        ),
+      );
+    }
+
+    return Card(
+      elevation: 6,
+      child: Padding(
+        padding: const EdgeInsets.all(20.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'NET WORTH',
-              style: TextStyle(
-                color: Colors.white.withOpacity(0.7),
-                fontSize: 11,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 1.5,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              service.formatCurrencyWith(service.calculateNetWorthIn('USD'), 'USD'),
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 28,
-                fontWeight: FontWeight.bold,
-              ),
+              'Portfolio Distribution',
+              style: Theme.of(context).textTheme.titleLarge,
             ),
             const SizedBox(height: 4),
             Text(
-              '≈ ${service.formatCurrencyWith(service.calculateNetWorthIn('MXN'), 'MXN')} MXN',
-              style: TextStyle(
-                color: Colors.white.withOpacity(0.8),
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-              ),
+              'Allocation by account group',
+              style: Theme.of(context).textTheme.bodyMedium,
             ),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                Icon(Icons.trending_up, color: Colors.white.withOpacity(0.9), size: 14),
-                const SizedBox(width: 6),
-                Text(
-                  '+12.4% this month',
-                  style: TextStyle(
-                    color: Colors.white.withOpacity(0.9),
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
+            const SizedBox(height: 20),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final isNarrow = constraints.maxWidth < 280;
+                
+                final donutChart = Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    SizedBox(
+                      height: 140,
+                      width: 140,
+                      child: PieChart(
+                        PieChartData(
+                          sections: chartSections,
+                          sectionsSpace: 2,
+                          centerSpaceRadius: 45,
+                          pieTouchData: PieTouchData(
+                            touchCallback: (FlTouchEvent event, pieTouchResponse) {
+                              if (event is FlTapDownEvent || event is FlTapUpEvent) {
+                                if (pieTouchResponse != null &&
+                                    pieTouchResponse.touchedSection != null) {
+                                  final touchedIndex = pieTouchResponse.touchedSection!.touchedSectionIndex;
+                                  setState(() {
+                                    if (touchedIndex >= 0 && touchedIndex < sortedEntries.length) {
+                                      _selectedGroupIndex = _selectedGroupIndex == touchedIndex ? -1 : touchedIndex;
+                                    } else {
+                                      _selectedGroupIndex = -1;
+                                    }
+                                  });
+                                }
+                              }
+                            },
+                          ),
+                        ),
+                      ),
+                    ),
+                    Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          service.formatCurrency(totalValue),
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        const Text(
+                          'Total Portfolio',
+                          style: TextStyle(
+                            fontSize: 9,
+                            color: AppTheme.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                );
+
+                final legendList = Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: List.generate(sortedEntries.length, (index) {
+                    final entry = sortedEntries[index];
+                    final groupName = entry.key;
+                    final sum = entry.value;
+                    final percent = totalValue > 0 ? (sum / totalValue) * 100 : 0.0;
+                    final color = groupColors[index % groupColors.length];
+                    final isSelected = index == _selectedGroupIndex;
+
+                    return GestureDetector(
+                      onTap: () {
+                        setState(() {
+                          _selectedGroupIndex = _selectedGroupIndex == index ? -1 : index;
+                        });
+                      },
+                      child: MouseRegion(
+                        cursor: SystemMouseCursors.click,
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                          margin: const EdgeInsets.only(bottom: 6),
+                          decoration: BoxDecoration(
+                            color: isSelected ? color.withOpacity(0.12) : Colors.transparent,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: isSelected ? color.withOpacity(0.3) : Colors.transparent,
+                              width: 1,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 8,
+                                height: 8,
+                                decoration: BoxDecoration(
+                                  color: color,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  groupName,
+                                  style: TextStyle(
+                                    color: isSelected ? Colors.white : AppTheme.textSecondary,
+                                    fontSize: 12,
+                                    fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: [
+                                  Text(
+                                    service.formatCurrency(sum),
+                                    style: TextStyle(
+                                      color: isSelected ? Colors.white : Colors.white70,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  Text(
+                                    '${percent.toStringAsFixed(1)}%',
+                                    style: const TextStyle(
+                                      color: AppTheme.textSecondary,
+                                      fontSize: 10,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  }),
+                );
+
+                if (isNarrow) {
+                  return Column(
+                    children: [
+                      Center(child: donutChart),
+                      const SizedBox(height: 16),
+                      legendList,
+                    ],
+                  );
+                }
+
+                return Row(
+                  children: [
+                    donutChart,
+                    const SizedBox(width: 16),
+                    Expanded(child: legendList),
+                  ],
+                );
+              },
             ),
           ],
         ),

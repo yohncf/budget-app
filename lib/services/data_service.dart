@@ -35,6 +35,8 @@ class DataService extends ChangeNotifier {
   final List<Map<String, String>> _priceRequestQueue = [];
   bool _isProcessingQueue = false;
   DateTime? _dailyLimitHitDate;
+  String _lastFetchDate = '';
+  final Map<String, int> _fetchCountsToday = {};
 
   bool get isDailyLimitHit {
     if (_dailyLimitHitDate == null) return false;
@@ -626,6 +628,105 @@ class DataService extends ChangeNotifier {
     }
   }
 
+  bool isTransactionEditable(Transaction tx) {
+    if (!_shouldUpdateBalance(tx.accountId, tx.date)) {
+      return false;
+    }
+
+    String? transferTag;
+    for (final tag in tx.tags) {
+      if (tag.startsWith('transfer_')) {
+        transferTag = tag;
+        break;
+      }
+    }
+    if (transferTag != null) {
+      Transaction? pairedTx;
+      for (final t in transactions) {
+        if (t.id != tx.id && t.tags.contains(transferTag) && t.status != 'deleted') {
+          pairedTx = t;
+          break;
+        }
+      }
+      if (pairedTx != null) {
+        if (!_shouldUpdateBalance(pairedTx.accountId, pairedTx.date)) {
+          return false;
+        }
+      }
+    }
+
+    return true;
+  }
+
+  Future<void> updateTransaction({
+    required List<Transaction> oldTxs,
+    required List<Transaction> newTxs,
+  }) async {
+    for (final tx in oldTxs) {
+      if (!isTransactionEditable(tx)) {
+        throw ArgumentError("Transaction on or before snapshot date cannot be modified.");
+      }
+    }
+
+    for (final tx in oldTxs) {
+      final accountIndex = accounts.indexWhere((a) => a.id == tx.accountId);
+      if (accountIndex != -1) {
+        final account = accounts[accountIndex];
+        if (_shouldUpdateBalance(account.id, tx.date)) {
+          final isCreditCard = account.type == 'credit_card';
+          final double convertedAmount = convert(tx.amount, tx.currency, account.currency);
+          final updatedAccount = account.copyWith(
+            currentBalance: isCreditCard
+                ? account.currentBalance + convertedAmount
+                : account.currentBalance - convertedAmount,
+          );
+          await _firestore.saveAccount(updatedAccount);
+          accounts[accountIndex] = updatedAccount;
+        }
+      }
+    }
+
+    final newIds = newTxs.map((t) => t.id).toSet();
+    for (final tx in oldTxs) {
+      if (!newIds.contains(tx.id)) {
+        final deletedTx = tx.copyWith(status: 'deleted');
+        await _firestore.saveTransaction(deletedTx);
+      }
+    }
+
+    for (final tx in newTxs) {
+      final category = categories.firstWhere((c) => c.id == tx.categoryId, 
+          orElse: () => Category(id: '', name: 'Unknown', type: 'expense', createdAt: DateTime.now()));
+      if (category.type == 'expense' && tx.amount >= 0) {
+        throw ArgumentError("Expenses must have a negative amount (< 0).");
+      }
+      if (category.type == 'income' && tx.amount <= 0) {
+        throw ArgumentError("Income must have a positive amount (> 0).");
+      }
+      if (category.type == 'reimbursement' && tx.amount <= 0) {
+        throw ArgumentError("Reimbursements must have a positive amount (> 0).");
+      }
+
+      await _firestore.saveTransaction(tx);
+
+      final accountIndex = accounts.indexWhere((a) => a.id == tx.accountId);
+      if (accountIndex != -1) {
+        final account = accounts[accountIndex];
+        if (_shouldUpdateBalance(account.id, tx.date)) {
+          final isCreditCard = account.type == 'credit_card';
+          final double convertedAmount = convert(tx.amount, tx.currency, account.currency);
+          final updatedAccount = account.copyWith(
+            currentBalance: isCreditCard
+                ? account.currentBalance - convertedAmount
+                : account.currentBalance + convertedAmount,
+          );
+          await _firestore.saveAccount(updatedAccount);
+          accounts[accountIndex] = updatedAccount;
+        }
+      }
+    }
+  }
+
 
   Future<void> addAssetTransaction(AssetTransaction assetTx, {double? cashImpactAmount, String? assetType}) async {
     // Write asset transaction execution log
@@ -734,7 +835,10 @@ class DataService extends ChangeNotifier {
     
     final needsFetch = lastFetch == null || now.difference(lastFetch).inMinutes > cooldownMinutes;
 
-    if (needsFetch && _loadingAssetPrices[symbol] != true && !isDailyLimitHit) {
+    _checkAndResetDailyCounts();
+    final fetchCount = _fetchCountsToday[symbol] ?? 0;
+
+    if (needsFetch && _loadingAssetPrices[symbol] != true && !isDailyLimitHit && fetchCount < 4) {
       queueAssetPriceFetch(symbol, asset.type);
     }
 
@@ -745,6 +849,14 @@ class DataService extends ChangeNotifier {
     }
 
     return holding.avgBuyPrice;
+  }
+
+  void _checkAndResetDailyCounts() {
+    final todayStr = DateFormat('yyyy-MM-dd').format(DateTime.now());
+    if (_lastFetchDate != todayStr) {
+      _lastFetchDate = todayStr;
+      _fetchCountsToday.clear();
+    }
   }
 
   void queueAssetPriceFetch(String symbol, String type) {
@@ -849,6 +961,8 @@ class DataService extends ChangeNotifier {
       if (price != null) {
         currentAssetPrices[symbol] = price;
         _lastFetchTime[symbol] = DateTime.now();
+        _checkAndResetDailyCounts();
+        _fetchCountsToday[symbol] = (_fetchCountsToday[symbol] ?? 0) + 1;
         _saveCachedPrices();
         notifyListeners();
       } else {
@@ -866,8 +980,6 @@ class DataService extends ChangeNotifier {
   }
 
   Future<void> _loadCachedPrices() async {
-    final now = DateTime.now();
-
     try {
       final config = await _firestore.getAssetPriceConfig();
       if (config != null) {
@@ -889,25 +1001,41 @@ class DataService extends ChangeNotifier {
         if (config['daily_limit_hit_date'] != null) {
           _dailyLimitHitDate = DateTime.tryParse(config['daily_limit_hit_date'] as String);
         }
+        if (config['last_fetch_date'] != null) {
+          _lastFetchDate = config['last_fetch_date'] as String;
+        }
+        if (config['fetch_counts_today'] != null) {
+          final Map<String, dynamic> storedCounts = config['fetch_counts_today'];
+          storedCounts.forEach((key, value) {
+            _fetchCountsToday[key] = value as int;
+          });
+        }
       }
 
-      // Apply the user's manual price overrides
-      currentAssetPrices['MSFT'] = 367.34;
-      currentAssetPrices['GOOGL'] = 349.68;
-      currentAssetPrices['DIS'] = 102.45;
-      currentAssetPrices['SCHB'] = 28.88;
-      currentAssetPrices['SCHG'] = 33.48;
-      currentAssetPrices['SOL'] = 71.85;
-      currentAssetPrices['KMNO'] = 0.0201;
+      // Default fallback prices to use if not present in Firestore cache
+      final Map<String, double> fallbackPrices = {
+        'MSFT': 367.34,
+        'GOOGL': 349.68,
+        'DIS': 102.45,
+        'SCHB': 28.88,
+        'SCHG': 33.48,
+        'SOL': 71.85,
+        'KMNO': 0.0201,
+      };
 
-      // Update timestamps so they aren't immediately re-fetched from the API
-      for (var key in ['MSFT', 'GOOGL', 'DIS', 'SCHB', 'SCHG', 'SOL', 'KMNO']) {
-        _lastFetchTime[key] = now;
+      bool appliedFallback = false;
+      fallbackPrices.forEach((key, value) {
+        if (!currentAssetPrices.containsKey(key)) {
+          currentAssetPrices[key] = value;
+          appliedFallback = true;
+        }
+      });
+
+      if (appliedFallback) {
+        await _saveCachedPrices();
       }
-
-      // Persist the overrides to the Firestore document config/asset_prices
-      await _saveCachedPrices();
-      debugPrint('Loaded and updated cached asset prices in Firestore: $currentAssetPrices');
+      
+      debugPrint('Loaded cached asset prices from Firestore: $currentAssetPrices');
     } catch (e) {
       debugPrint('Error loading cached asset prices from Firestore: $e');
     }
@@ -924,6 +1052,8 @@ class DataService extends ChangeNotifier {
         'prices': currentAssetPrices,
         'timestamps': stringifiedTimestamps,
         'daily_limit_hit_date': _dailyLimitHitDate?.toIso8601String(),
+        'last_fetch_date': _lastFetchDate,
+        'fetch_counts_today': _fetchCountsToday,
       });
       debugPrint('Saved asset prices to Firestore config: $currentAssetPrices');
     } catch (e) {

@@ -60,19 +60,7 @@ class BudgetApp extends StatelessWidget {
         title: 'Budget App Ledger',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.darkTheme,
-        builder: (context, child) {
-          return child != null
-              ? Overlay(
-                  initialEntries: [
-                    OverlayEntry(
-                      builder: (context) => SelectionArea(
-                        child: child,
-                      ),
-                    ),
-                  ],
-                )
-              : const SizedBox.shrink();
-        },
+
         home: StreamBuilder<User?>(
           stream: FirebaseAuth.instance.authStateChanges(),
           builder: (context, snapshot) {
@@ -434,7 +422,9 @@ class _MainLayoutState extends State<MainLayout> {
         decoration: const BoxDecoration(
           gradient: AppTheme.backgroundGradient,
         ),
-        child: _pages[_selectedIndex],
+        child: SelectionArea(
+          child: _pages[_selectedIndex],
+        ),
       ),
     );
 

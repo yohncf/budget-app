@@ -24,6 +24,10 @@ class _LedgerPageState extends State<LedgerPage> {
   String _filterType = 'All'; // All, Expense, Income, Transfer
   String _filterCategoryId = 'All'; // All, or specific category ID
   
+  // Search values
+  final _searchController = TextEditingController();
+  String _searchQuery = '';
+  
   // Form values
   String? _selectedAccountId;
   String? _selectedTransferToAccountId;
@@ -40,6 +44,7 @@ class _LedgerPageState extends State<LedgerPage> {
     _amountController.dispose();
     _descriptionController.dispose();
     _dateController.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -128,6 +133,39 @@ class _LedgerPageState extends State<LedgerPage> {
                 runSpacing: 12,
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
+                  // Search Box
+                  Container(
+                    width: 240,
+                    height: 40,
+                    child: TextField(
+                      controller: _searchController,
+                      style: const TextStyle(fontSize: 13, color: Colors.white),
+                      decoration: InputDecoration(
+                        isDense: true,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        hintText: 'Search description or amount...',
+                        hintStyle: const TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+                        prefixIcon: const Icon(Icons.search, size: 18, color: AppTheme.textSecondary),
+                        suffixIcon: _searchQuery.isNotEmpty
+                            ? IconButton(
+                                icon: const Icon(Icons.clear, size: 16, color: AppTheme.textSecondary),
+                                onPressed: () {
+                                  setState(() {
+                                    _searchController.clear();
+                                    _searchQuery = '';
+                                  });
+                                },
+                              )
+                            : null,
+                      ),
+                      onChanged: (val) {
+                        setState(() {
+                          _searchQuery = val.trim();
+                        });
+                      },
+                    ),
+                  ),
+
                   // Showing since Date Filter
                   Row(
                     mainAxisSize: MainAxisSize.min,
@@ -164,7 +202,7 @@ class _LedgerPageState extends State<LedgerPage> {
                     ],
                   ),
 
-                  // Transaction Type Dropdown Filter
+                  // Transaction Type Filter (SegmentedButton)
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -173,47 +211,57 @@ class _LedgerPageState extends State<LedgerPage> {
                         style: TextStyle(color: AppTheme.textSecondary, fontSize: 13),
                       ),
                       const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF1D1D22),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: const Color(0xFF23232A)),
-                        ),
-                        child: DropdownButtonHideUnderline(
-                          child: DropdownButton<String>(
-                            value: _filterType,
-                            dropdownColor: AppTheme.darkCard,
-                            style: const TextStyle(color: Colors.white, fontSize: 13),
-                            icon: const Icon(Icons.arrow_drop_down, color: AppTheme.textSecondary, size: 18),
-                            items: const [
-                              DropdownMenuItem(value: 'All', child: Text('All Types')),
-                              DropdownMenuItem(value: 'Expense', child: Text('Expenses')),
-                              DropdownMenuItem(value: 'Income', child: Text('Income')),
-                              DropdownMenuItem(value: 'Transfer', child: Text('Transfers')),
-                            ],
-                            onChanged: (newType) {
-                              if (newType != null) {
-                                setState(() {
-                                  _filterType = newType;
-                                  // Reset category filter if it doesn't match the new type
-                                  if (_filterCategoryId != 'All') {
-                                    final hasCat = dataService.categories.any((c) {
-                                      if (c.id != _filterCategoryId) return false;
-                                      if (newType == 'All') return true;
-                                      if (newType == 'Expense') return c.type == 'expense' || c.type == 'investment';
-                                      if (newType == 'Income') return c.type == 'income' || c.type == 'reimbursement';
-                                      if (newType == 'Transfer') return c.type == 'transfer';
-                                      return true;
-                                    });
-                                    if (!hasCat) {
-                                      _filterCategoryId = 'All';
-                                    }
-                                  }
-                                });
-                              }
-                            },
+                      SegmentedButton<String>(
+                        segments: const [
+                          ButtonSegment<String>(
+                            value: 'All',
+                            label: Text('All'),
                           ),
+                          ButtonSegment<String>(
+                            value: 'Expense',
+                            label: Text('Expenses'),
+                          ),
+                          ButtonSegment<String>(
+                            value: 'Income',
+                            label: Text('Income'),
+                          ),
+                          ButtonSegment<String>(
+                            value: 'Transfer',
+                            label: Text('Transfers'),
+                          ),
+                        ],
+                        selected: {_filterType},
+                        showSelectedIcon: false,
+                        onSelectionChanged: (newSelection) {
+                          if (newSelection.isNotEmpty) {
+                            final newType = newSelection.first;
+                            setState(() {
+                              _filterType = newType;
+                              // Reset category filter if it doesn't match the new type
+                              if (_filterCategoryId != 'All') {
+                                final hasCat = dataService.categories.any((c) {
+                                  if (c.id != _filterCategoryId) return false;
+                                  if (newType == 'All') return true;
+                                  if (newType == 'Expense') return c.type == 'expense' || c.type == 'investment';
+                                  if (newType == 'Income') return c.type == 'income' || c.type == 'reimbursement';
+                                  if (newType == 'Transfer') return c.type == 'transfer';
+                                  return true;
+                                });
+                                if (!hasCat) {
+                                  _filterCategoryId = 'All';
+                                }
+                              }
+                            });
+                          }
+                        },
+                        style: SegmentedButton.styleFrom(
+                          backgroundColor: const Color(0xFF1D1D22),
+                          selectedBackgroundColor: AppTheme.primaryPurple,
+                          selectedForegroundColor: Colors.black,
+                          foregroundColor: AppTheme.textSecondary,
+                          side: const BorderSide(color: Color(0xFF23232A)),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          visualDensity: VisualDensity.compact,
                         ),
                       ),
                     ],
@@ -331,6 +379,19 @@ class _LedgerPageState extends State<LedgerPage> {
                             return false;
                           }
                           
+                          if (_searchQuery.isNotEmpty) {
+                            final desc = tx.description?.toLowerCase() ?? '';
+                            final amountStr = tx.amount.abs().toString();
+                            final queryLower = _searchQuery.toLowerCase();
+                            
+                            final matchesDesc = desc.contains(queryLower);
+                            final matchesAmount = amountStr.contains(queryLower);
+                            
+                            if (!matchesDesc && !matchesAmount) {
+                              return false;
+                            }
+                          }
+                          
                           return true;
                         }).toList();
 
@@ -340,356 +401,513 @@ class _LedgerPageState extends State<LedgerPage> {
                           );
                         }
 
-                        return ListView.separated(
-                          itemCount: displayTransactions.length,
-                          separatorBuilder: (context, index) => const Divider(color: Color(0xFF2E2E4A)),
-                          itemBuilder: (context, index) {
-                            final tx = displayTransactions[index];
-                            final isDeleted = tx.status == 'deleted';
-
-                            Account? account;
-                            for (var a in dataService.accounts) {
-                              if (a.id == tx.accountId) {
-                                account = a;
-                                break;
-                              }
-                            }
-                            account ??= Account(id: '', name: 'Deleted Account', type: 'checking', currency: 'USD', createdAt: DateTime.now(), updatedAt: DateTime.now());
-
-                            Category? category;
-                            for (var c in dataService.categories) {
-                              if (c.id == tx.categoryId) {
-                                category = c;
-                                break;
-                              }
-                            }
-                            category ??= Category(id: '', name: 'Uncategorized', type: 'expense', createdAt: DateTime.now());
-
-                            Color amountColor = Colors.white;
-                            String prefix = '';
-                            if (category.type == 'expense') {
-                              amountColor = isDeleted ? AppTheme.dangerRed.withOpacity(0.5) : AppTheme.dangerRed;
-                            } else if (category.type == 'income' || category.type == 'reimbursement') {
-                              amountColor = isDeleted ? AppTheme.successGreen.withOpacity(0.5) : AppTheme.successGreen;
-                              prefix = '+';
-                            } else if (category.type == 'transfer') {
-                              amountColor = isDeleted ? AppTheme.accentCyan.withOpacity(0.5) : AppTheme.accentCyan;
-                            }
-
-                            if (isMobile) {
-                              // Mobile stacked view item layout
-                              final itemWidget = Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 4.0),
-                                child: Row(
-                                  children: [
-                                    // Visual leading category type indicator
-                                    Container(
-                                      width: 36,
-                                      height: 36,
-                                      decoration: BoxDecoration(
-                                        color: isDeleted
-                                            ? const Color(0xFF1D1D2C)
-                                            : category.type == 'expense'
-                                                ? AppTheme.dangerRed.withOpacity(0.12)
-                                                : category.type == 'transfer'
-                                                    ? AppTheme.accentCyan.withOpacity(0.12)
-                                                    : AppTheme.successGreen.withOpacity(0.12),
-                                        shape: BoxShape.circle,
-                                        border: Border.all(
-                                          color: isDeleted
-                                              ? Colors.transparent
-                                              : category.type == 'expense'
-                                                  ? AppTheme.dangerRed.withOpacity(0.3)
-                                                  : category.type == 'transfer'
-                                                      ? AppTheme.accentCyan.withOpacity(0.3)
-                                                      : AppTheme.successGreen.withOpacity(0.3),
-                                          width: 1.0,
+                        return SelectionContainer.disabled(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              if (!isMobile) ...[
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
+                                  child: Row(
+                                    children: const [
+                                      Expanded(
+                                        flex: 3,
+                                        child: Text(
+                                          'DESCRIPTION / CATEGORY / ACCOUNT',
+                                          style: TextStyle(color: AppTheme.textSecondary, fontSize: 11, fontWeight: FontWeight.bold),
                                         ),
                                       ),
-                                      child: Icon(
-                                        category.type == 'expense'
-                                            ? Icons.arrow_downward_rounded
-                                            : category.type == 'transfer'
-                                                ? Icons.swap_horiz_rounded
-                                                : Icons.arrow_upward_rounded,
-                                        color: isDeleted
-                                            ? AppTheme.textSecondary.withOpacity(0.5)
-                                            : category.type == 'expense'
-                                                ? AppTheme.dangerRed
-                                                : category.type == 'transfer'
-                                                    ? AppTheme.accentCyan
-                                                    : AppTheme.successGreen,
-                                        size: 16,
+                                      Expanded(
+                                        flex: 2,
+                                        child: Text(
+                                          'DATE',
+                                          style: TextStyle(color: AppTheme.textSecondary, fontSize: 11, fontWeight: FontWeight.bold),
+                                        ),
                                       ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    
-                                    // Sub-details stacked in center
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Row(
-                                            crossAxisAlignment: CrossAxisAlignment.center,
+                                      Expanded(
+                                        flex: 2,
+                                        child: Text(
+                                          'AMOUNT',
+                                          textAlign: TextAlign.right,
+                                          style: TextStyle(color: AppTheme.textSecondary, fontSize: 11, fontWeight: FontWeight.bold),
+                                        ),
+                                      ),
+                                      SizedBox(
+                                        width: 60,
+                                        child: Text(
+                                          'ACTIONS',
+                                          textAlign: TextAlign.center,
+                                          style: TextStyle(color: AppTheme.textSecondary, fontSize: 11, fontWeight: FontWeight.bold),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const Divider(color: Color(0xFF2E2E4A)),
+                              ],
+                              Expanded(
+                                child: ListView.separated(
+                                  itemCount: displayTransactions.length,
+                                  separatorBuilder: (context, index) => const Divider(color: Color(0xFF2E2E4A)),
+                                  itemBuilder: (context, index) {
+                                    final tx = displayTransactions[index];
+                                    final isDeleted = tx.status == 'deleted';
+
+                                    Account? account;
+                                    for (var a in dataService.accounts) {
+                                      if (a.id == tx.accountId) {
+                                        account = a;
+                                        break;
+                                      }
+                                    }
+                                    account ??= Account(id: '', name: 'Deleted Account', type: 'checking', currency: 'USD', createdAt: DateTime.now(), updatedAt: DateTime.now());
+
+                                    Category? category;
+                                    for (var c in dataService.categories) {
+                                      if (c.id == tx.categoryId) {
+                                        category = c;
+                                        break;
+                                      }
+                                    }
+                                    category ??= Category(id: '', name: 'Uncategorized', type: 'expense', createdAt: DateTime.now());
+
+                                    Color amountColor = Colors.white;
+                                    String prefix = '';
+                                    if (category.type == 'expense') {
+                                      amountColor = isDeleted ? AppTheme.dangerRed.withOpacity(0.5) : AppTheme.dangerRed;
+                                    } else if (category.type == 'income' || category.type == 'reimbursement') {
+                                      amountColor = isDeleted ? AppTheme.successGreen.withOpacity(0.5) : AppTheme.successGreen;
+                                      prefix = '+';
+                                    } else if (category.type == 'transfer') {
+                                      amountColor = isDeleted ? AppTheme.accentCyan.withOpacity(0.5) : AppTheme.accentCyan;
+                                    }
+
+                                    if (isMobile) {
+                                      // Mobile stacked view item layout
+                                      final itemWidget = SelectionArea(
+                                        child: Padding(
+                                          padding: const EdgeInsets.symmetric(vertical: 4.0),
+                                          child: Row(
                                             children: [
-                                              Flexible(
-                                                child: Text(
-                                                  tx.description ?? 'No description',
-                                                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                                                        fontWeight: FontWeight.bold,
-                                                        fontSize: 14,
-                                                        color: isDeleted ? AppTheme.textSecondary.withOpacity(0.5) : null,
-                                                        decoration: isDeleted ? TextDecoration.lineThrough : null,
-                                                      ),
-                                                  maxLines: 1,
-                                                  overflow: TextOverflow.ellipsis,
+                                              // Visual leading category type indicator
+                                              Container(
+                                                width: 36,
+                                                height: 36,
+                                                decoration: BoxDecoration(
+                                                  color: isDeleted
+                                                      ? const Color(0xFF1D1D2C)
+                                                      : category.type == 'expense'
+                                                          ? AppTheme.dangerRed.withOpacity(0.12)
+                                                          : category.type == 'transfer'
+                                                              ? AppTheme.accentCyan.withOpacity(0.12)
+                                                              : AppTheme.successGreen.withOpacity(0.12),
+                                                  shape: BoxShape.circle,
+                                                  border: Border.all(
+                                                    color: isDeleted
+                                                        ? Colors.transparent
+                                                        : category.type == 'expense'
+                                                            ? AppTheme.dangerRed.withOpacity(0.3)
+                                                            : category.type == 'transfer'
+                                                                ? AppTheme.accentCyan.withOpacity(0.3)
+                                                                : AppTheme.successGreen.withOpacity(0.3),
+                                                    width: 1.0,
+                                                  ),
+                                                ),
+                                                child: Icon(
+                                                  category.type == 'expense'
+                                                      ? Icons.arrow_downward_rounded
+                                                      : category.type == 'transfer'
+                                                          ? Icons.swap_horiz_rounded
+                                                          : Icons.arrow_upward_rounded,
+                                                  color: isDeleted
+                                                      ? AppTheme.textSecondary.withOpacity(0.5)
+                                                      : category.type == 'expense'
+                                                          ? AppTheme.dangerRed
+                                                          : category.type == 'transfer'
+                                                              ? AppTheme.accentCyan
+                                                              : AppTheme.successGreen,
+                                                  size: 16,
                                                 ),
                                               ),
-                                              const SizedBox(width: 6),
-                                              Text(
-                                                DateFormat('MM-dd').format(tx.date),
-                                                style: TextStyle(
-                                                  fontSize: 10,
-                                                  color: isDeleted ? AppTheme.textSecondary.withOpacity(0.4) : AppTheme.textSecondary,
+                                              const SizedBox(width: 12),
+                                              
+                                              // Sub-details stacked in center
+                                              Expanded(
+                                                child: Column(
+                                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                                  children: [
+                                                    Row(
+                                                      crossAxisAlignment: CrossAxisAlignment.center,
+                                                      children: [
+                                                        Flexible(
+                                                          child: Text(
+                                                            tx.description ?? 'No description',
+                                                            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                                                                  fontWeight: FontWeight.bold,
+                                                                  fontSize: 14,
+                                                                  color: isDeleted ? AppTheme.textSecondary.withOpacity(0.5) : null,
+                                                                  decoration: isDeleted ? TextDecoration.lineThrough : null,
+                                                                ),
+                                                            maxLines: 1,
+                                                            overflow: TextOverflow.ellipsis,
+                                                          ),
+                                                        ),
+                                                        const SizedBox(width: 6),
+                                                        Text(
+                                                          DateFormat('MM-dd').format(tx.date),
+                                                          style: TextStyle(
+                                                            fontSize: 10,
+                                                            color: isDeleted ? AppTheme.textSecondary.withOpacity(0.4) : AppTheme.textSecondary,
+                                                            decoration: isDeleted ? TextDecoration.lineThrough : null,
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                    const SizedBox(height: 2),
+                                                    Row(
+                                                      children: [
+                                                        Container(
+                                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                          decoration: BoxDecoration(
+                                                            color: isDeleted ? const Color(0xFF1D1D2C) : const Color(0xFF21213E),
+                                                            borderRadius: BorderRadius.circular(4),
+                                                          ),
+                                                          child: Text(
+                                                            category.name,
+                                                            style: TextStyle(
+                                                              fontSize: 9,
+                                                              color: isDeleted ? AppTheme.textSecondary.withOpacity(0.5) : AppTheme.textSecondary,
+                                                              decoration: isDeleted ? TextDecoration.lineThrough : null,
+                                                            ),
+                                                          ),
+                                                        ),
+                                                        const SizedBox(width: 6),
+                                                        Text(
+                                                          '•',
+                                                          style: TextStyle(
+                                                            fontSize: 9,
+                                                            color: isDeleted ? AppTheme.textSecondary.withOpacity(0.3) : AppTheme.textSecondary.withOpacity(0.7),
+                                                          ),
+                                                        ),
+                                                        const SizedBox(width: 6),
+                                                        Expanded(
+                                                          child: Text(
+                                                            account.name,
+                                                            style: TextStyle(
+                                                              fontSize: 10,
+                                                              color: isDeleted ? AppTheme.textSecondary.withOpacity(0.5) : AppTheme.textSecondary,
+                                                              decoration: isDeleted ? TextDecoration.lineThrough : null,
+                                                            ),
+                                                            maxLines: 1,
+                                                            overflow: TextOverflow.ellipsis,
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                              const SizedBox(width: 8),
+
+                                              // Trailing amount
+                                              Column(
+                                                crossAxisAlignment: CrossAxisAlignment.end,
+                                                mainAxisAlignment: MainAxisAlignment.center,
+                                                children: [
+                                                  Row(
+                                                    mainAxisSize: MainAxisSize.min,
+                                                    children: [
+                                                      if (!isDeleted && !dataService.isTransactionEditable(tx)) ...[
+                                                        const Tooltip(
+                                                          message: 'Locked: Prior to account snapshot',
+                                                          child: Icon(Icons.lock_outline, color: AppTheme.textSecondary, size: 12),
+                                                        ),
+                                                        const SizedBox(width: 4),
+                                                      ],
+                                                      Text(
+                                                        '$prefix${NumberFormat.simpleCurrency(name: tx.currency).format(tx.amount.abs())} ${tx.currency}',
+                                                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                                                              color: amountColor,
+                                                              fontWeight: FontWeight.bold,
+                                                              fontSize: 14,
+                                                              decoration: isDeleted ? TextDecoration.lineThrough : null,
+                                                            ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                  if (tx.currency != dataService.displayCurrency) ...[
+                                                    const SizedBox(height: 2),
+                                                    Text(
+                                                      '${dataService.formatAndConvert(tx.amount, tx.currency)} ${dataService.displayCurrency}',
+                                                      style: TextStyle(
+                                                        fontSize: 9,
+                                                        color: isDeleted ? AppTheme.textSecondary.withOpacity(0.5) : AppTheme.textSecondary,
+                                                        decoration: isDeleted ? TextDecoration.lineThrough : null,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ],
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      );
+
+                                      // Only enable Dismissible on active transactions (non-deleted) and editable transactions
+                                      if (!isDeleted && dataService.isTransactionEditable(tx)) {
+                                        return Dismissible(
+                                          key: Key('tx_dismiss_${tx.id}'),
+                                          direction: DismissDirection.horizontal,
+                                          background: Container(
+                                            alignment: Alignment.centerLeft,
+                                            padding: const EdgeInsets.only(left: 16.0),
+                                            decoration: BoxDecoration(
+                                              color: AppTheme.primaryPurple.withOpacity(0.2),
+                                              borderRadius: BorderRadius.circular(8),
+                                            ),
+                                            child: const Icon(
+                                              Icons.edit_outlined,
+                                              color: AppTheme.primaryPurple,
+                                              size: 22,
+                                            ),
+                                          ),
+                                          secondaryBackground: Container(
+                                            alignment: Alignment.centerRight,
+                                            padding: const EdgeInsets.only(right: 16.0),
+                                            decoration: BoxDecoration(
+                                              color: AppTheme.dangerRed.withOpacity(0.2),
+                                              borderRadius: BorderRadius.circular(8),
+                                            ),
+                                            child: const Icon(
+                                              Icons.delete_outline,
+                                              color: AppTheme.dangerRed,
+                                              size: 22,
+                                            ),
+                                          ),
+                                          confirmDismiss: (direction) async {
+                                            if (direction == DismissDirection.startToEnd) {
+                                              _showAddTransactionDialog(context, dataService, editTx: tx);
+                                              return false;
+                                            } else {
+                                              return await showDialog<bool>(
+                                                context: context,
+                                                builder: (context) => AlertDialog(
+                                                  backgroundColor: AppTheme.darkCard,
+                                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                                                  title: Row(
+                                                    children: const [
+                                                      Icon(Icons.delete_outline, color: AppTheme.dangerRed),
+                                                      SizedBox(width: 8),
+                                                      Text('Delete Transaction?'),
+                                                    ],
+                                                  ),
+                                                  content: const Text(
+                                                    'Are you sure you want to delete this transaction? This will reverse the amount from the account balance.',
+                                                  ),
+                                                  actions: [
+                                                    TextButton(
+                                                      onPressed: () => Navigator.of(context).pop(false),
+                                                      child: const Text('Cancel', style: TextStyle(color: AppTheme.textSecondary)),
+                                                    ),
+                                                    ElevatedButton(
+                                                      style: ElevatedButton.styleFrom(backgroundColor: AppTheme.dangerRed),
+                                                      onPressed: () => Navigator.of(context).pop(true),
+                                                      child: const Text('Delete'),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ) ?? false;
+                                            }
+                                          },
+                                          onDismissed: (direction) {
+                                            if (direction == DismissDirection.endToStart) {
+                                              dataService.deleteTransaction(tx);
+                                              ScaffoldMessenger.of(context).showSnackBar(
+                                                SnackBar(
+                                                  content: Text('Deleted transaction: ${tx.description ?? "No description"}'),
+                                                  duration: const Duration(seconds: 2),
+                                                ),
+                                              );
+                                            }
+                                          },
+                                          child: itemWidget,
+                                        );
+                                      }
+                                      return itemWidget;
+                                    }
+
+                                    // Desktop layout
+                                    return SelectionArea(
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 12.0),
+                                        child: Row(
+                                          children: [
+                                            Expanded(
+                                              flex: 3,
+                                              child: Column(
+                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                children: [
+                                                  Text(
+                                                    tx.description ?? 'No description',
+                                                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                                                      fontWeight: FontWeight.bold,
+                                                      color: isDeleted ? AppTheme.textSecondary.withOpacity(0.5) : null,
+                                                      decoration: isDeleted ? TextDecoration.lineThrough : null,
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 4),
+                                                  Row(
+                                                    children: [
+                                                      Container(
+                                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                                        decoration: BoxDecoration(
+                                                          color: isDeleted ? const Color(0xFF1D1D2C) : const Color(0xFF21213E),
+                                                          borderRadius: BorderRadius.circular(6),
+                                                        ),
+                                                        child: Text(
+                                                          category.name,
+                                                          style: TextStyle(
+                                                            fontSize: 10,
+                                                            color: isDeleted ? AppTheme.textSecondary.withOpacity(0.5) : AppTheme.textSecondary,
+                                                            decoration: isDeleted ? TextDecoration.lineThrough : null,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                      const SizedBox(width: 8),
+                                                      Text(
+                                                        account.name,
+                                                        style: TextStyle(
+                                                          fontSize: 11,
+                                                          color: isDeleted ? AppTheme.textSecondary.withOpacity(0.5) : AppTheme.textSecondary,
+                                                          decoration: isDeleted ? TextDecoration.lineThrough : null,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  )
+                                                ],
+                                              ),
+                                            ),
+                                            Expanded(
+                                              flex: 2,
+                                              child: Text(
+                                                dateFormatter.format(tx.date),
+                                                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                                  fontFamily: 'monospace',
+                                                  color: isDeleted ? AppTheme.textSecondary.withOpacity(0.5) : Colors.white,
                                                   decoration: isDeleted ? TextDecoration.lineThrough : null,
                                                 ),
                                               ),
-                                            ],
-                                          ),
-                                          const SizedBox(height: 2),
-                                          Row(
-                                            children: [
-                                              Container(
-                                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                                decoration: BoxDecoration(
-                                                  color: isDeleted ? const Color(0xFF1D1D2C) : const Color(0xFF21213E),
-                                                  borderRadius: BorderRadius.circular(4),
-                                                ),
-                                                child: Text(
-                                                  category.name,
-                                                  style: TextStyle(
-                                                    fontSize: 9,
-                                                    color: isDeleted ? AppTheme.textSecondary.withOpacity(0.5) : AppTheme.textSecondary,
-                                                    decoration: isDeleted ? TextDecoration.lineThrough : null,
-                                                  ),
-                                                ),
-                                              ),
-                                              const SizedBox(width: 6),
-                                              Text(
-                                                '•',
-                                                style: TextStyle(
-                                                  fontSize: 9,
-                                                  color: isDeleted ? AppTheme.textSecondary.withOpacity(0.3) : AppTheme.textSecondary.withOpacity(0.7),
-                                                ),
-                                              ),
-                                              const SizedBox(width: 6),
-                                              Expanded(
-                                                child: Text(
-                                                  account.name,
-                                                  style: TextStyle(
-                                                    fontSize: 10,
-                                                    color: isDeleted ? AppTheme.textSecondary.withOpacity(0.5) : AppTheme.textSecondary,
-                                                    decoration: isDeleted ? TextDecoration.lineThrough : null,
-                                                  ),
-                                                  maxLines: 1,
-                                                  overflow: TextOverflow.ellipsis,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-
-                                    // Trailing amount
-                                    Column(
-                                      crossAxisAlignment: CrossAxisAlignment.end,
-                                      mainAxisAlignment: MainAxisAlignment.center,
-                                      children: [
-                                        Text(
-                                          '$prefix${NumberFormat.simpleCurrency(name: tx.currency).format(tx.amount.abs())} ${tx.currency}',
-                                          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                                                color: amountColor,
-                                                fontWeight: FontWeight.bold,
-                                                fontSize: 14,
-                                                decoration: isDeleted ? TextDecoration.lineThrough : null,
-                                              ),
-                                        ),
-                                        if (tx.currency != dataService.displayCurrency) ...[
-                                          const SizedBox(height: 2),
-                                          Text(
-                                            '${dataService.formatAndConvert(tx.amount, tx.currency)} ${dataService.displayCurrency}',
-                                            style: TextStyle(
-                                              fontSize: 9,
-                                              color: isDeleted ? AppTheme.textSecondary.withOpacity(0.5) : AppTheme.textSecondary,
-                                              decoration: isDeleted ? TextDecoration.lineThrough : null,
                                             ),
-                                          ),
-                                        ],
-                                      ],
-                                    ),
-                                  ],
-                                ),
-                              );
-
-                              // Only enable Dismissible on active transactions (non-deleted)
-                              if (!isDeleted) {
-                                return Dismissible(
-                                  key: Key('tx_dismiss_${tx.id}'),
-                                  direction: DismissDirection.endToStart,
-                                  background: Container(
-                                    alignment: Alignment.centerRight,
-                                    padding: const EdgeInsets.only(right: 16.0),
-                                    decoration: BoxDecoration(
-                                      color: AppTheme.dangerRed.withOpacity(0.2),
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: const Icon(
-                                      Icons.delete_outline,
-                                      color: AppTheme.dangerRed,
-                                      size: 22,
-                                    ),
-                                  ),
-                                  confirmDismiss: (direction) async {
-                                    return await showDialog<bool>(
-                                      context: context,
-                                      builder: (context) => AlertDialog(
-                                        backgroundColor: AppTheme.darkCard,
-                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                                        title: Row(
-                                          children: const [
-                                            Icon(Icons.delete_outline, color: AppTheme.dangerRed),
-                                            SizedBox(width: 8),
-                                            Text('Delete Transaction?'),
+                                            Expanded(
+                                              flex: 2,
+                                              child: Column(
+                                                crossAxisAlignment: CrossAxisAlignment.end,
+                                                mainAxisAlignment: MainAxisAlignment.center,
+                                                children: [
+                                                  Text(
+                                                    '$prefix${NumberFormat.simpleCurrency(name: tx.currency).format(tx.amount.abs())} ${tx.currency}',
+                                                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                                                          color: amountColor,
+                                                          fontWeight: FontWeight.bold,
+                                                          decoration: isDeleted ? TextDecoration.lineThrough : null,
+                                                        ),
+                                                  ),
+                                                  if (tx.currency != dataService.displayCurrency)
+                                                    Text(
+                                                      'Equiv: ${dataService.formatAndConvert(tx.amount, tx.currency)} ${dataService.displayCurrency}',
+                                                      style: TextStyle(
+                                                        fontSize: 10,
+                                                        color: isDeleted ? AppTheme.textSecondary.withOpacity(0.5) : AppTheme.textSecondary,
+                                                        decoration: isDeleted ? TextDecoration.lineThrough : null,
+                                                      ),
+                                                    ),
+                                                ],
+                                              ),
+                                            ),
+                                            SizedBox(
+                                              width: 60,
+                                              child: Center(
+                                                child: isDeleted
+                                                    ? const SizedBox()
+                                                    : !dataService.isTransactionEditable(tx)
+                                                        ? const Tooltip(
+                                                            message: 'Locked: Prior to account snapshot',
+                                                            child: Icon(Icons.lock_outline, color: AppTheme.textSecondary, size: 20),
+                                                          )
+                                                        : PopupMenuButton<String>(
+                                                            icon: const Icon(Icons.more_vert, color: AppTheme.textSecondary),
+                                                            color: AppTheme.darkCard,
+                                                            onSelected: (action) async {
+                                                              if (action == 'edit') {
+                                                                _showAddTransactionDialog(context, dataService, editTx: tx);
+                                                              } else if (action == 'delete') {
+                                                                final confirmed = await showDialog<bool>(
+                                                                  context: context,
+                                                                  builder: (context) => AlertDialog(
+                                                                    backgroundColor: AppTheme.darkCard,
+                                                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                                                                    title: Row(
+                                                                      children: const [
+                                                                        Icon(Icons.delete_outline, color: AppTheme.dangerRed),
+                                                                        SizedBox(width: 8),
+                                                                        Text('Delete Transaction?'),
+                                                                      ],
+                                                                    ),
+                                                                    content: const Text(
+                                                                      'Are you sure you want to delete this transaction? This will reverse the amount from the account balance.',
+                                                                    ),
+                                                                    actions: [
+                                                                      TextButton(
+                                                                        onPressed: () => Navigator.of(context).pop(false),
+                                                                        child: const Text('Cancel', style: TextStyle(color: AppTheme.textSecondary)),
+                                                                      ),
+                                                                      ElevatedButton(
+                                                                        style: ElevatedButton.styleFrom(backgroundColor: AppTheme.dangerRed),
+                                                                        onPressed: () => Navigator.of(context).pop(true),
+                                                                        child: const Text('Delete'),
+                                                                      ),
+                                                                    ],
+                                                                  ),
+                                                                );
+                                                                if (confirmed == true) {
+                                                                  await dataService.deleteTransaction(tx);
+                                                                }
+                                                              }
+                                                            },
+                                                            itemBuilder: (context) => [
+                                                              const PopupMenuItem(
+                                                                value: 'edit',
+                                                                child: Row(
+                                                                  children: [
+                                                                    Icon(Icons.edit_outlined, size: 16),
+                                                                    SizedBox(width: 8),
+                                                                    Text('Edit'),
+                                                                  ],
+                                                                ),
+                                                              ),
+                                                              const PopupMenuItem(
+                                                                value: 'delete',
+                                                                child: Row(
+                                                                  children: [
+                                                                    Icon(Icons.delete_outline, color: AppTheme.dangerRed, size: 16),
+                                                                    SizedBox(width: 8),
+                                                                    Text('Delete', style: TextStyle(color: AppTheme.dangerRed)),
+                                                                  ],
+                                                                ),
+                                                              ),
+                                                            ],
+                                                          ),
+                                              ),
+                                            ),
                                           ],
                                         ),
-                                        content: const Text(
-                                          'Are you sure you want to delete this transaction? This will reverse the amount from the account balance.',
-                                        ),
-                                        actions: [
-                                          TextButton(
-                                            onPressed: () => Navigator.of(context).pop(false),
-                                            child: const Text('Cancel', style: TextStyle(color: AppTheme.textSecondary)),
-                                          ),
-                                          ElevatedButton(
-                                            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.dangerRed),
-                                            onPressed: () => Navigator.of(context).pop(true),
-                                            child: const Text('Delete'),
-                                          ),
-                                        ],
-                                      ),
-                                    ) ?? false;
-                                  },
-                                  onDismissed: (direction) {
-                                    dataService.deleteTransaction(tx);
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text('Deleted transaction: ${tx.description ?? "No description"}'),
-                                        duration: const Duration(seconds: 2),
                                       ),
                                     );
                                   },
-                                  child: itemWidget,
-                                );
-                              }
-                              return itemWidget;
-                            }
-
-                            // Desktop layout
-                            return Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 8.0),
-                              child: Row(
-                                children: [
-                                  Expanded(
-                                    flex: 2,
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          tx.description ?? 'No description',
-                                          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                                            fontWeight: FontWeight.bold,
-                                            color: isDeleted ? AppTheme.textSecondary.withOpacity(0.5) : null,
-                                            decoration: isDeleted ? TextDecoration.lineThrough : null,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 4),
-                                        Row(
-                                          children: [
-                                            Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                              decoration: BoxDecoration(
-                                                color: isDeleted ? const Color(0xFF1D1D2C) : const Color(0xFF21213E),
-                                                borderRadius: BorderRadius.circular(6),
-                                              ),
-                                              child: Text(
-                                                category.name,
-                                                style: TextStyle(
-                                                  fontSize: 10,
-                                                  color: isDeleted ? AppTheme.textSecondary.withOpacity(0.5) : AppTheme.textSecondary,
-                                                  decoration: isDeleted ? TextDecoration.lineThrough : null,
-                                                ),
-                                              ),
-                                            ),
-                                            const SizedBox(width: 8),
-                                            Text(
-                                              account.name,
-                                              style: TextStyle(
-                                                fontSize: 11,
-                                                color: isDeleted ? AppTheme.textSecondary.withOpacity(0.5) : AppTheme.textSecondary,
-                                                decoration: isDeleted ? TextDecoration.lineThrough : null,
-                                              ),
-                                            ),
-                                          ],
-                                        )
-                                      ],
-                                    ),
-                                  ),
-                                  Expanded(
-                                    flex: 1,
-                                    child: Text(
-                                      dateFormatter.format(tx.date),
-                                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                        color: isDeleted ? AppTheme.textSecondary.withOpacity(0.5) : null,
-                                        decoration: isDeleted ? TextDecoration.lineThrough : null,
-                                      ),
-                                    ),
-                                  ),
-                                  Column(
-                                    crossAxisAlignment: CrossAxisAlignment.end,
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Text(
-                                        '$prefix${NumberFormat.simpleCurrency(name: tx.currency).format(tx.amount.abs())} ${tx.currency}',
-                                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                                              color: amountColor,
-                                              fontWeight: FontWeight.bold,
-                                              decoration: isDeleted ? TextDecoration.lineThrough : null,
-                                            ),
-                                      ),
-                                      if (tx.currency != dataService.displayCurrency)
-                                        Text(
-                                          'Equiv: ${dataService.formatAndConvert(tx.amount, tx.currency)} ${dataService.displayCurrency}',
-                                          style: TextStyle(
-                                            fontSize: 10,
-                                            color: isDeleted ? AppTheme.textSecondary.withOpacity(0.5) : AppTheme.textSecondary,
-                                            decoration: isDeleted ? TextDecoration.lineThrough : null,
-                                          ),
-                                        ),
-                                    ],
-                                  ),
-                                  const SizedBox(width: 8),
-                                  isDeleted
-                                      ? const SizedBox(width: 48)
-                                      : IconButton(
-                                          icon: const Icon(Icons.delete_outline, color: AppTheme.textSecondary),
-                                          onPressed: () => dataService.deleteTransaction(tx),
-                                        ),
-                                ],
+                                ),
                               ),
-                            );
-                          },
+                            ],
+                          ),
                         );
                       },
                     ),
@@ -703,7 +921,7 @@ class _LedgerPageState extends State<LedgerPage> {
     );
   }
 
-  void _showAddTransactionDialog(BuildContext context, DataService dataService) {
+  void _showAddTransactionDialog(BuildContext context, DataService dataService, {Transaction? editTx}) {
     final activeAccounts = dataService.accounts.where((a) => a.status == 'active').toList();
     if (activeAccounts.isEmpty || dataService.categories.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -715,20 +933,104 @@ class _LedgerPageState extends State<LedgerPage> {
     // Sort active accounts alphabetically
     activeAccounts.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
 
+    // Create a list of accounts that includes archived/inactive ones if editing
+    final List<Account> dialogAccounts = List.from(activeAccounts);
+    Transaction? pairedTx;
+    String? transferTag;
+    if (editTx != null) {
+      Account? acc1;
+      for (final a in dataService.accounts) {
+        if (a.id == editTx.accountId) {
+          acc1 = a;
+          break;
+        }
+      }
+      final nonNullAcc1 = acc1;
+      if (nonNullAcc1 != null && !dialogAccounts.any((a) => a.id == nonNullAcc1.id)) {
+        dialogAccounts.add(nonNullAcc1);
+      }
+      for (final tag in editTx.tags) {
+        if (tag.startsWith('transfer_')) {
+          transferTag = tag;
+          break;
+        }
+      }
+      if (transferTag != null) {
+        for (final t in dataService.transactions) {
+          if (t.id != editTx.id && t.tags.contains(transferTag) && t.status != 'deleted') {
+            pairedTx = t;
+            break;
+          }
+        }
+        final nonNullPairedTx = pairedTx;
+        if (nonNullPairedTx != null) {
+          Account? acc2;
+          for (final a in dataService.accounts) {
+            if (a.id == nonNullPairedTx.accountId) {
+              acc2 = a;
+              break;
+            }
+          }
+          final nonNullAcc2 = acc2;
+          if (nonNullAcc2 != null && !dialogAccounts.any((a) => a.id == nonNullAcc2.id)) {
+            dialogAccounts.add(nonNullAcc2);
+          }
+        }
+      }
+    }
+
     String transactionType = 'expense';
+    if (editTx != null) {
+      if (transferTag != null) {
+        transactionType = 'transfer';
+      } else {
+        final cat = dataService.categories.firstWhere(
+          (c) => c.id == editTx.categoryId,
+          orElse: () => Category(id: '', name: 'Unknown', type: 'expense', createdAt: DateTime.now()),
+        );
+        if (cat.type == 'income' || cat.type == 'reimbursement') {
+          transactionType = 'income';
+        } else {
+          transactionType = 'expense';
+        }
+      }
+    }
 
     setState(() {
-      _selectedAccountId = null;
-      if (activeAccounts.length > 1) {
-        _selectedTransferToAccountId = activeAccounts[1].id;
+      if (editTx != null) {
+        if (transactionType == 'transfer') {
+          final outflow = editTx.amount < 0 ? editTx : pairedTx;
+          final inflow = editTx.amount < 0 ? pairedTx : editTx;
+          
+          _selectedAccountId = outflow?.accountId;
+          _selectedTransferToAccountId = inflow?.accountId;
+          _selectedCategoryId = editTx.categoryId;
+          _selectedTxCurrency = outflow?.currency ?? editTx.currency;
+          _amountController.text = editTx.amount.abs().toString();
+          _descriptionController.text = editTx.description ?? '';
+          _selectedDate = editTx.date;
+        } else {
+          _selectedAccountId = editTx.accountId;
+          _selectedTransferToAccountId = dialogAccounts.length > 1 ? dialogAccounts[1].id : (dialogAccounts.isNotEmpty ? dialogAccounts.first.id : null);
+          _selectedCategoryId = editTx.categoryId;
+          _selectedTxCurrency = editTx.currency;
+          _amountController.text = editTx.amount.abs().toString();
+          _descriptionController.text = editTx.description ?? '';
+          _selectedDate = editTx.date;
+        }
       } else {
-        _selectedTransferToAccountId = activeAccounts.isNotEmpty ? activeAccounts.first.id : null;
+        _selectedAccountId = null;
+        if (dialogAccounts.length > 1) {
+          _selectedTransferToAccountId = dialogAccounts[1].id;
+        } else {
+          _selectedTransferToAccountId = dialogAccounts.isNotEmpty ? dialogAccounts.first.id : null;
+        }
+        _selectedCategoryId = null;
+        _selectedTxCurrency = 'MXN';
+        _amountController.clear();
+        _descriptionController.clear();
+        _selectedDate = DateTime.now();
       }
-      _selectedCategoryId = null; // Start empty/not prefilled
-      _selectedTxCurrency = 'MXN';
-      _amountController.clear();
-      _descriptionController.clear();
-      _selectedDate = DateTime.now();
       _dateController.text = DateFormat('yyyy-MM-dd').format(_selectedDate);
     });
 
@@ -737,7 +1039,7 @@ class _LedgerPageState extends State<LedgerPage> {
       builder: (context) {
         return StatefulBuilder(
           builder: (context, setDialogState) {
-            final expIncAccounts = activeAccounts.where((a) => a.type == 'checking' || a.type == 'credit_card').toList();
+            final expIncAccounts = dialogAccounts.where((a) => a.type == 'checking' || a.type == 'credit_card').toList();
 
             List<Category> filteredCategories = [];
             if (transactionType == 'expense') {
@@ -758,7 +1060,7 @@ class _LedgerPageState extends State<LedgerPage> {
             return AlertDialog(
               backgroundColor: AppTheme.darkCard,
               title: Text(
-                'New Transaction',
+                editTx != null ? 'Edit Transaction' : 'New Transaction',
                 style: Theme.of(context).textTheme.titleLarge,
               ),
               content: SizedBox(
@@ -835,7 +1137,7 @@ class _LedgerPageState extends State<LedgerPage> {
                                   (a) => a.name.toLowerCase().contains('debit'),
                                   orElse: () => expIncAccounts.firstWhere(
                                     (a) => a.type == 'checking',
-                                    orElse: () => expIncAccounts.isNotEmpty ? expIncAccounts.first : activeAccounts.first,
+                                    orElse: () => expIncAccounts.isNotEmpty ? expIncAccounts.first : dialogAccounts.first,
                                   ),
                                 );
                                 _selectedAccountId = defaultAcc.id;
@@ -857,12 +1159,16 @@ class _LedgerPageState extends State<LedgerPage> {
                         ),
                         const SizedBox(height: 16),
 
-                        // 3. Category (Search + Dropdown)
+                        // 3. Category (Search + Dropdown Menu)
                         LayoutBuilder(
-                          key: ValueKey(transactionType), // Keyed by transaction type to clear when type changes
+                          key: ValueKey('${transactionType}_$_selectedCategoryId'),
                           builder: (context, constraints) {
+                            final currentCategory = filteredCategories.firstWhere(
+                              (c) => c.id == _selectedCategoryId,
+                              orElse: () => Category(id: '', name: '', type: '', createdAt: DateTime.now()),
+                            );
                             return Autocomplete<Category>(
-                              initialValue: const TextEditingValue(text: ''), // No pre-filled value
+                              initialValue: TextEditingValue(text: currentCategory.name),
                               displayStringForOption: (Category option) => option.name,
                               optionsBuilder: (TextEditingValue textEditingValue) {
                                 final query = textEditingValue.text.trim();
@@ -877,10 +1183,19 @@ class _LedgerPageState extends State<LedgerPage> {
                                 return TextFormField(
                                   controller: textEditingController,
                                   focusNode: focusNode,
-                                  decoration: const InputDecoration(
+                                  decoration: InputDecoration(
                                     labelText: 'Category',
-                                    hintText: 'Search or select category...',
-                                    suffixIcon: Icon(Icons.search),
+                                    hintText: 'Select category...',
+                                    suffixIcon: IconButton(
+                                      icon: const Icon(Icons.arrow_drop_down),
+                                      onPressed: () {
+                                        if (focusNode.hasFocus) {
+                                          focusNode.unfocus();
+                                        } else {
+                                          focusNode.requestFocus();
+                                        }
+                                      },
+                                    ),
                                   ),
                                   validator: (val) {
                                     if (val == null || val.isEmpty) {
@@ -900,6 +1215,10 @@ class _LedgerPageState extends State<LedgerPage> {
                                     if (match.id.isNotEmpty) {
                                       setDialogState(() {
                                         _selectedCategoryId = match.id;
+                                      });
+                                    } else {
+                                      setDialogState(() {
+                                        _selectedCategoryId = null;
                                       });
                                     }
                                   },
@@ -1017,7 +1336,7 @@ class _LedgerPageState extends State<LedgerPage> {
                           LayoutBuilder(
                             key: ValueKey('${transactionType}_account_$_selectedAccountId'),
                             builder: (context, constraints) {
-                              final currentAccount = activeAccounts.firstWhere(
+                              final currentAccount = dialogAccounts.firstWhere(
                                 (a) => a.id == _selectedAccountId,
                                 orElse: () => Account(id: '', name: '', type: 'checking', currency: 'USD', createdAt: DateTime.now(), updatedAt: DateTime.now()),
                               );
@@ -1115,7 +1434,7 @@ class _LedgerPageState extends State<LedgerPage> {
                           LayoutBuilder(
                             key: ValueKey('transfer_from_$_selectedAccountId'),
                             builder: (context, constraints) {
-                              final currentAccount = activeAccounts.firstWhere(
+                              final currentAccount = dialogAccounts.firstWhere(
                                 (a) => a.id == _selectedAccountId,
                                 orElse: () => Account(id: '', name: '', type: 'checking', currency: 'USD', createdAt: DateTime.now(), updatedAt: DateTime.now()),
                               );
@@ -1125,9 +1444,9 @@ class _LedgerPageState extends State<LedgerPage> {
                                 optionsBuilder: (TextEditingValue textEditingValue) {
                                   final query = textEditingValue.text.trim();
                                   if (query.isEmpty) {
-                                    return activeAccounts;
+                                    return dialogAccounts;
                                   }
-                                  return activeAccounts.where((Account option) {
+                                  return dialogAccounts.where((Account option) {
                                     return option.name.toLowerCase().contains(query.toLowerCase());
                                   });
                                 },
@@ -1144,14 +1463,14 @@ class _LedgerPageState extends State<LedgerPage> {
                                       if (val == null || val.isEmpty) {
                                         return 'Source account is required';
                                       }
-                                      final hasMatch = activeAccounts.any((a) => a.name.toLowerCase() == val.trim().toLowerCase());
+                                      final hasMatch = dialogAccounts.any((a) => a.name.toLowerCase() == val.trim().toLowerCase());
                                       if (!hasMatch) {
                                         return 'Select a valid source account';
                                       }
                                       return null;
                                     },
                                     onChanged: (val) {
-                                      final match = activeAccounts.firstWhere(
+                                      final match = dialogAccounts.firstWhere(
                                         (a) => a.name.toLowerCase() == val.trim().toLowerCase(),
                                         orElse: () => Account(id: '', name: '', type: '', currency: 'USD', createdAt: DateTime.now(), updatedAt: DateTime.now()),
                                       );
@@ -1211,11 +1530,11 @@ class _LedgerPageState extends State<LedgerPage> {
                           LayoutBuilder(
                             key: ValueKey('transfer_to_$_selectedTransferToAccountId'),
                             builder: (context, constraints) {
-                              final currentAccount = activeAccounts.firstWhere(
+                              final currentAccount = dialogAccounts.firstWhere(
                                 (a) => a.id == _selectedTransferToAccountId,
                                 orElse: () => Account(id: '', name: '', type: 'checking', currency: 'USD', createdAt: DateTime.now(), updatedAt: DateTime.now()),
                               );
-                              final toAccountOptions = activeAccounts.where((a) => a.id != _selectedAccountId).toList();
+                              final toAccountOptions = dialogAccounts.where((a) => a.id != _selectedAccountId).toList();
                               return Autocomplete<Account>(
                                 initialValue: TextEditingValue(text: currentAccount.id.isNotEmpty ? currentAccount.name : ''),
                                 displayStringForOption: (Account option) => option.name,
@@ -1241,17 +1560,17 @@ class _LedgerPageState extends State<LedgerPage> {
                                       if (val == null || val.isEmpty) {
                                         return 'Destination account is required';
                                       }
-                                      final hasMatch = activeAccounts.any((a) => a.name.toLowerCase() == val.trim().toLowerCase());
+                                      final hasMatch = dialogAccounts.any((a) => a.name.toLowerCase() == val.trim().toLowerCase());
                                       if (!hasMatch) {
                                         return 'Select a valid destination account';
                                       }
-                                      if (val.trim().toLowerCase() == activeAccounts.firstWhere((a) => a.id == _selectedAccountId, orElse: () => Account(id: '', name: '___', type: '', currency: '', createdAt: DateTime.now(), updatedAt: DateTime.now())).name.toLowerCase()) {
+                                      if (val.trim().toLowerCase() == dialogAccounts.firstWhere((a) => a.id == _selectedAccountId, orElse: () => Account(id: '', name: '___', type: '', currency: '', createdAt: DateTime.now(), updatedAt: DateTime.now())).name.toLowerCase()) {
                                         return 'Source and destination accounts must be different';
                                       }
                                       return null;
                                     },
                                     onChanged: (val) {
-                                      final match = activeAccounts.firstWhere(
+                                      final match = dialogAccounts.firstWhere(
                                         (a) => a.name.toLowerCase() == val.trim().toLowerCase(),
                                         orElse: () => Account(id: '', name: '', type: '', currency: 'USD', createdAt: DateTime.now(), updatedAt: DateTime.now()),
                                       );
@@ -1320,7 +1639,7 @@ class _LedgerPageState extends State<LedgerPage> {
                             ),
                             validator: (val) {
                               if (val == null || val.trim().isEmpty) {
-                                return 'Amount is required';
+                                  return 'Amount is required';
                               }
                               final amount = double.tryParse(val);
                               if (amount == null || amount <= 0) {
@@ -1358,6 +1677,13 @@ class _LedgerPageState extends State<LedgerPage> {
                       return;
                     }
 
+                    if (_selectedCategoryId == null) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Please select a category.')),
+                      );
+                      return;
+                    }
+
                     final double? rawAmount = double.tryParse(_amountController.text);
                     if (rawAmount == null || rawAmount == 0) {
                       ScaffoldMessenger.of(context).showSnackBar(
@@ -1375,6 +1701,32 @@ class _LedgerPageState extends State<LedgerPage> {
                     // Wait a frame for the focus change to propagate and overlays to close
                     await Future.delayed(Duration.zero);
 
+                    // Show edit confirmation dialog if editing
+                    if (editTx != null) {
+                      if (!context.mounted) return;
+                      final confirmed = await showDialog<bool>(
+                        context: context,
+                        builder: (context) => AlertDialog(
+                          backgroundColor: AppTheme.darkCard,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                          title: const Text('Confirm Edit'),
+                          content: const Text('Are you sure you want to update this transaction? This will adjust your account balances accordingly.'),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.of(context).pop(false),
+                              child: const Text('Cancel', style: TextStyle(color: AppTheme.textSecondary)),
+                            ),
+                            ElevatedButton(
+                              style: ElevatedButton.styleFrom(backgroundColor: AppTheme.primaryPurple, foregroundColor: Colors.black),
+                              onPressed: () => Navigator.of(context).pop(true),
+                              child: const Text('Confirm'),
+                            ),
+                          ],
+                        ),
+                      );
+                      if (confirmed != true) return;
+                    }
+
                     // Dismiss dialog first to prevent Flutter Web widget tree collision on rebuild
                     if (context.mounted) {
                       Navigator.of(context).pop();
@@ -1389,41 +1741,56 @@ class _LedgerPageState extends State<LedgerPage> {
                           return;
                         }
 
-                        final sourceAccount = activeAccounts.firstWhere((a) => a.id == _selectedAccountId);
-                        final destAccount = activeAccounts.firstWhere((a) => a.id == _selectedTransferToAccountId);
+                        final sourceAccount = dialogAccounts.firstWhere((a) => a.id == _selectedAccountId);
+                        final destAccount = dialogAccounts.firstWhere((a) => a.id == _selectedTransferToAccountId);
 
                         // Unified transfer link tag
-                        final transferTag = 'transfer_${_uuid.v4()}';
+                        final tTag = transferTag ?? 'transfer_${_uuid.v4()}';
 
                         // 1. Outflow transaction
                         final outflowTx = Transaction(
-                          id: _uuid.v4().substring(0, 20),
+                          id: (editTx != null && transferTag != null)
+                              ? (editTx.amount < 0 ? editTx.id : (pairedTx?.id ?? _uuid.v4().substring(0, 20)))
+                              : _uuid.v4().substring(0, 20),
                           accountId: _selectedAccountId!,
                           categoryId: _selectedCategoryId!,
                           amount: -absAmount,
                           currency: sourceAccount.currency,
                           date: _selectedDate,
                           description: _descriptionController.text.trim().isEmpty ? 'Internal Transfer' : _descriptionController.text.trim(),
-                          tags: [transferTag],
-                          createdAt: DateTime.now(),
+                          tags: [tTag],
+                          createdAt: editTx?.createdAt ?? DateTime.now(),
                         );
 
                         // 2. Inflow transaction (with currency conversion if different)
                         final inflowAmount = dataService.convert(absAmount, sourceAccount.currency, destAccount.currency);
                         final inflowTx = Transaction(
-                          id: _uuid.v4().substring(0, 20),
+                          id: (editTx != null && transferTag != null)
+                              ? (editTx.amount >= 0 ? editTx.id : (pairedTx?.id ?? _uuid.v4().substring(0, 20)))
+                              : _uuid.v4().substring(0, 20),
                           accountId: _selectedTransferToAccountId!,
                           categoryId: _selectedCategoryId!,
                           amount: inflowAmount,
                           currency: destAccount.currency,
                           date: _selectedDate,
                           description: _descriptionController.text.trim().isEmpty ? 'Internal Transfer' : _descriptionController.text.trim(),
-                          tags: [transferTag],
-                          createdAt: DateTime.now(),
+                          tags: [tTag],
+                          createdAt: editTx?.createdAt ?? DateTime.now(),
                         );
 
-                        await dataService.addTransaction(outflowTx);
-                        await dataService.addTransaction(inflowTx);
+                        if (editTx != null) {
+                          final oldList = <Transaction>[];
+                          oldList.add(editTx);
+                          if (pairedTx != null) oldList.add(pairedTx);
+
+                          await dataService.updateTransaction(
+                            oldTxs: oldList,
+                            newTxs: [outflowTx, inflowTx],
+                          );
+                        } else {
+                          await dataService.addTransaction(outflowTx);
+                          await dataService.addTransaction(inflowTx);
+                        }
                       } else {
                         // Expense or Income
                         double finalAmount = absAmount;
@@ -1431,12 +1798,12 @@ class _LedgerPageState extends State<LedgerPage> {
                           finalAmount = -absAmount;
                         }
 
-                        final selectedAccount = activeAccounts.firstWhere((a) => a.id == _selectedAccountId);
+                        final selectedAccount = dialogAccounts.firstWhere((a) => a.id == _selectedAccountId);
                         final String txCurrency = _selectedTxCurrency ?? selectedAccount.currency;
                         final double exRate = dataService.convert(1.0, txCurrency, selectedAccount.currency);
 
                         final newTx = Transaction(
-                          id: _uuid.v4().substring(0, 20),
+                          id: editTx?.id ?? _uuid.v4().substring(0, 20),
                           accountId: _selectedAccountId!,
                           categoryId: _selectedCategoryId!,
                           amount: finalAmount,
@@ -1444,11 +1811,26 @@ class _LedgerPageState extends State<LedgerPage> {
                           exchangeRate: exRate,
                           date: _selectedDate,
                           description: _descriptionController.text.trim().isEmpty ? null : _descriptionController.text.trim(),
-                          createdAt: DateTime.now(),
+                          createdAt: editTx?.createdAt ?? DateTime.now(),
                         );
 
-                        await dataService.addTransaction(newTx);
+                        if (editTx != null) {
+                          final oldList = <Transaction>[];
+                          oldList.add(editTx);
+                          if (pairedTx != null) oldList.add(pairedTx);
+
+                          await dataService.updateTransaction(
+                            oldTxs: oldList,
+                            newTxs: [newTx],
+                          );
+                        } else {
+                          await dataService.addTransaction(newTx);
+                        }
                       }
+
+                      messenger.showSnackBar(
+                        SnackBar(content: Text(editTx != null ? 'Transaction updated successfully.' : 'Transaction added successfully.')),
+                      );
                     } catch (e) {
                       messenger.showSnackBar(
                         SnackBar(content: Text('Error: ${e.toString()}')),
