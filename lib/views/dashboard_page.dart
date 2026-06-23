@@ -19,6 +19,7 @@ class DashboardPage extends StatefulWidget {
 
 class _DashboardPageState extends State<DashboardPage> {
   late DateTime _selectedMonth;
+  int _selectedCategoryIndex = 0;
 
   @override
   void initState() {
@@ -51,6 +52,7 @@ class _DashboardPageState extends State<DashboardPage> {
     if (newMonth == null) return;
     setState(() {
       _selectedMonth = newMonth;
+      _selectedCategoryIndex = 0;
     });
 
     if (newMonth.isBefore(service.transactionFilterDate)) {
@@ -195,73 +197,41 @@ class _DashboardPageState extends State<DashboardPage> {
                 // Main Layout Grid
                 Column(
                   children: [
-                    _buildIncomeVsExpensesChart(context, dataService),
-                    const SizedBox(height: 24),
-                    _buildChartsSection(context, dataService),
+                    LayoutBuilder(
+                      builder: (context, constraints) {
+                        if (constraints.maxWidth >= 1000) {
+                          return IntrinsicHeight(
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Expanded(
+                                  child: _buildIncomeVsExpensesChart(context, dataService),
+                                ),
+                                const SizedBox(width: 24),
+                                Expanded(
+                                  child: _buildChartsSection(context, dataService),
+                                ),
+                              ],
+                            ),
+                          );
+                        } else {
+                          return Column(
+                            children: [
+                              _buildIncomeVsExpensesChart(context, dataService),
+                              const SizedBox(height: 24),
+                              _buildChartsSection(context, dataService),
+                            ],
+                          );
+                        }
+                      },
+                    ),
                     const SizedBox(height: 24),
                     _buildMergedBudgetsAndRecurringSection(context, dataService),
-                    const SizedBox(height: 24),
-                    _buildNetWorthCard(context, dataService),
                   ],
                 ),
               ],
             ),
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildNetWorthCard(BuildContext context, DataService service) {
-    return Container(
-      width: double.infinity,
-      decoration: BoxDecoration(
-        gradient: AppTheme.primaryGradient,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: AppTheme.mainAction.withOpacity(0.3),
-            blurRadius: 20,
-            offset: const Offset(0, 10),
-          )
-        ],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(32.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'NET WORTH',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    color: Colors.white.withOpacity(0.7),
-                    letterSpacing: 2.0,
-                  ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              service.formatCurrency(service.netWorth),
-              style: Theme.of(context).textTheme.displayLarge?.copyWith(
-                    color: Colors.white,
-                    fontSize: 48,
-                    fontWeight: FontWeight.bold,
-                  ),
-            ),
-            const SizedBox(height: 20),
-            Row(
-              children: [
-                Icon(Icons.trending_up, color: Colors.white.withOpacity(0.9)),
-                const SizedBox(width: 8),
-                Text(
-                  '+12.4% this month',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: Colors.white.withOpacity(0.9),
-                        fontWeight: FontWeight.w600,
-                      ),
-                ),
-              ],
-            ),
-          ],
         ),
       ),
     );
@@ -415,6 +385,13 @@ class _DashboardPageState extends State<DashboardPage> {
     final sortedEntries = categorySummaries.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
 
+    // Ensure selected category index is within bounds
+    if (sortedEntries.isEmpty) {
+      _selectedCategoryIndex = -1;
+    } else if (_selectedCategoryIndex < 0 || _selectedCategoryIndex >= sortedEntries.length) {
+      _selectedCategoryIndex = 0;
+    }
+
     // Curated harmonious color palette for categories when not defined in DB
     final List<Color> categoryPalette = [
       const Color(0xFF8B5CF6), // Purple
@@ -451,17 +428,19 @@ class _DashboardPageState extends State<DashboardPage> {
     }
 
     final List<PieChartSectionData> chartSections = [];
-    for (var entry in sortedEntries) {
+    for (int i = 0; i < sortedEntries.length; i++) {
+      final entry = sortedEntries[i];
       final cat = entry.key;
       final sum = entry.value;
       final color = categoryColors[cat.id.isNotEmpty ? cat.id : cat.name] ?? parseColor(cat.colorHex);
+      final isSelected = i == _selectedCategoryIndex;
       
       chartSections.add(
         PieChartSectionData(
           color: color,
           value: sum,
           title: '', 
-          radius: 16, 
+          radius: isSelected ? 24.0 : 16.0, 
           showTitle: false,
         ),
       );
@@ -506,9 +485,9 @@ class _DashboardPageState extends State<DashboardPage> {
               )
             else ...[
               // Donut Chart + Legend Row
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  final isMobile = constraints.maxWidth < 600;
+              Builder(
+                builder: (context) {
+                  final isMobile = MediaQuery.of(context).size.width < 600;
                   
                   final donutChart = Stack(
                     alignment: Alignment.center,
@@ -521,6 +500,21 @@ class _DashboardPageState extends State<DashboardPage> {
                             sections: chartSections,
                             sectionsSpace: 3,
                             centerSpaceRadius: 60,
+                            pieTouchData: PieTouchData(
+                              touchCallback: (FlTouchEvent event, pieTouchResponse) {
+                                if (event is FlTapDownEvent || event is FlTapUpEvent) {
+                                  if (pieTouchResponse != null &&
+                                      pieTouchResponse.touchedSection != null) {
+                                    final touchedIndex = pieTouchResponse.touchedSection!.touchedSectionIndex;
+                                    if (touchedIndex >= 0 && touchedIndex < sortedEntries.length) {
+                                      setState(() {
+                                        _selectedCategoryIndex = touchedIndex;
+                                      });
+                                    }
+                                  }
+                                }
+                              },
+                            ),
                           ),
                         ),
                       ),
@@ -551,32 +545,56 @@ class _DashboardPageState extends State<DashboardPage> {
                   final legendList = Wrap(
                     spacing: 12,
                     runSpacing: 8,
-                    children: sortedEntries.map((entry) {
+                    children: List.generate(sortedEntries.length, (index) {
+                      final entry = sortedEntries[index];
                       final cat = entry.key;
                       final color = categoryColors[cat.id.isNotEmpty ? cat.id : cat.name] ?? parseColor(cat.colorHex);
-                      return Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            width: 10,
-                            height: 10,
+                      final isSelected = index == _selectedCategoryIndex;
+                      return GestureDetector(
+                        onTap: () {
+                          setState(() {
+                            _selectedCategoryIndex = index;
+                          });
+                        },
+                        child: MouseRegion(
+                          cursor: SystemMouseCursors.click,
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                             decoration: BoxDecoration(
-                              color: color,
-                              shape: BoxShape.circle,
+                              color: isSelected ? color.withOpacity(0.12) : Colors.transparent,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: isSelected ? color.withOpacity(0.3) : Colors.transparent,
+                                width: 1,
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  width: 10,
+                                  height: 10,
+                                  decoration: BoxDecoration(
+                                    color: color,
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  cat.name,
+                                  style: TextStyle(
+                                    color: isSelected ? Colors.white : AppTheme.textSecondary,
+                                    fontSize: 12,
+                                    fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                          const SizedBox(width: 6),
-                          Text(
-                            cat.name,
-                            style: const TextStyle(
-                              color: AppTheme.textSecondary,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ],
+                        ),
                       );
-                    }).toList(),
+                    }),
                   );
 
                   if (isMobile) {
@@ -604,105 +622,97 @@ class _DashboardPageState extends State<DashboardPage> {
                   );
                 },
               ),
-              const SizedBox(height: 32),
-              const Divider(color: Color(0xFF23232A)),
-              const SizedBox(height: 16),
-              
-              // Category Card List (looking exactly like the user's uploaded mock)
-              ...sortedEntries.map((entry) {
-                final cat = entry.key;
-                final sum = entry.value;
-                final percent = totalOutflow > 0 ? (sum / totalOutflow) * 100 : 0.0;
-                final color = categoryColors[cat.id.isNotEmpty ? cat.id : cat.name] ?? parseColor(cat.colorHex);
-                final iconData = getCategoryIcon(cat.icon);
+              const SizedBox(height: 24),
+              if (sortedEntries.isNotEmpty && _selectedCategoryIndex >= 0 && _selectedCategoryIndex < sortedEntries.length)
+                Center(
+                  child: Builder(
+                    builder: (context) {
+                      final entry = sortedEntries[_selectedCategoryIndex];
+                      final cat = entry.key;
+                      final sum = entry.value;
+                      final percent = totalOutflow > 0 ? (sum / totalOutflow) * 100 : 0.0;
+                      final color = categoryColors[cat.id.isNotEmpty ? cat.id : cat.name] ?? parseColor(cat.colorHex);
+                      final iconData = getCategoryIcon(cat.icon);
 
-                // Determine if over budget for the trend arrow (up-red / down-green)
-                bool isOverBudget = false;
-                BudgetTarget? target;
-                for (var t in service.budgetTargets) {
-                  if (t.categoryId == cat.id) {
-                    target = t;
-                    break;
-                  }
-                }
-                if (target != null && sum > target.targetAmount) {
-                  isOverBudget = true;
-                }
+                      // Determine if over budget for the trend arrow (up-red / down-green)
+                      bool isOverBudget = false;
+                      BudgetTarget? target;
+                      for (var t in service.budgetTargets) {
+                        if (t.categoryId == cat.id) {
+                          target = t;
+                          break;
+                        }
+                      }
+                      if (target != null && sum > target.targetAmount) {
+                        isOverBudget = true;
+                      }
 
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 12),
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF141417),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: const Color(0xFF23232A)),
-                  ),
-                  child: Row(
-                    children: [
-                      // Circular colored category icon container
-                      Container(
-                        padding: const EdgeInsets.all(10),
+                      return AnimatedContainer(
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.easeInOut,
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                         decoration: BoxDecoration(
                           color: color.withOpacity(0.12),
-                          shape: BoxShape.circle,
-                          border: Border.all(color: color.withOpacity(0.3), width: 1),
-                        ),
-                        child: Icon(
-                          iconData,
-                          color: color,
-                          size: 20,
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      // Category Name
-                      Expanded(
-                        child: Text(
-                          cat.name,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 15,
-                            color: Colors.white,
+                          borderRadius: BorderRadius.circular(24),
+                          border: Border.all(
+                            color: color.withOpacity(0.3),
+                            width: 1.5,
                           ),
                         ),
-                      ),
-                      // Amount & Outflow Percentage Trend
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          Text(
-                            service.formatCurrency(sum),
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 15,
-                              color: Colors.white,
+                        child: Wrap(
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          spacing: 10,
+                          runSpacing: 6,
+                          children: [
+                            Icon(iconData, color: color, size: 20),
+                            Text(
+                              cat.name,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                                fontSize: 14,
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: 4),
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                '${percent.toStringAsFixed(0)}%',
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: color,
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                              child: Text(
+                                service.formatCurrency(sum),
                                 style: const TextStyle(
-                                  color: AppTheme.textSecondary,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
                                 ),
                               ),
-                              const SizedBox(width: 4),
-                              Icon(
-                                isOverBudget ? Icons.arrow_upward : Icons.arrow_downward,
-                                color: isOverBudget ? AppTheme.dangerRed : AppTheme.successGreen,
-                                size: 12,
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ],
+                            ),
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  '${percent.toStringAsFixed(1)}%',
+                                  style: const TextStyle(
+                                    color: AppTheme.textSecondary,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                Icon(
+                                  isOverBudget ? Icons.arrow_upward : Icons.arrow_downward,
+                                  color: isOverBudget ? AppTheme.dangerRed : AppTheme.successGreen,
+                                  size: 14,
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      );
+                    },
                   ),
-                );
-              }).toList(),
+                ),
             ],
           ],
         ),
