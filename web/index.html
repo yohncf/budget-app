@@ -16,6 +16,17 @@
   -->
   <base href="$FLUTTER_BASE_HREF">
 
+  <script>
+    // Force unregister service workers to disable caching and load latest changes
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then(function(registrations) {
+        for (let registration of registrations) {
+          registration.unregister();
+        }
+      });
+    }
+  </script>
+
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
   <meta name="description" content="A new Flutter project.">

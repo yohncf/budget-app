@@ -392,6 +392,7 @@ class _DashboardPageState extends State<DashboardPage> {
           }
         }
         cat ??= Category(id: '', name: 'Miscellaneous', type: 'expense', colorHex: '#9CA3AF', createdAt: DateTime.now());
+        if (cat.type == 'transfer') continue;
         
         final amountInDisplay = service.convertToDisplay(tx.amount.abs(), tx.currency);
         
@@ -414,11 +415,46 @@ class _DashboardPageState extends State<DashboardPage> {
     final sortedEntries = categorySummaries.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
 
+    // Curated harmonious color palette for categories when not defined in DB
+    final List<Color> categoryPalette = [
+      const Color(0xFF8B5CF6), // Purple
+      const Color(0xFF3B82F6), // Blue
+      const Color(0xFF10B981), // Emerald
+      const Color(0xFFF59E0B), // Amber
+      const Color(0xFFEF4444), // Red
+      const Color(0xFFEC4899), // Pink
+      const Color(0xFF06B6D4), // Cyan
+      const Color(0xFF84CC16), // Lime
+      const Color(0xFF14B8A6), // Teal
+      const Color(0xFFF97316), // Orange
+      const Color(0xFF6366F1), // Indigo
+      const Color(0xFFD946EF), // Fuchsia
+      const Color(0xFF60A5FA), // Light Blue
+      const Color(0xFF34D399), // Light Emerald
+      const Color(0xFFFBBF24), // Light Amber
+      const Color(0xFFF87171), // Light Red
+      const Color(0xFFF472B6), // Light Pink
+    ];
+
+    final Map<String, Color> categoryColors = {};
+    for (int i = 0; i < sortedEntries.length; i++) {
+      final cat = sortedEntries[i].key;
+      final key = cat.id.isNotEmpty ? cat.id : cat.name;
+      if (cat.colorHex.isNotEmpty && 
+          cat.colorHex.toLowerCase() != '#8b5cf6' && 
+          cat.colorHex.toLowerCase() != 'null' &&
+          cat.colorHex.toLowerCase() != 'undefined') {
+        categoryColors[key] = parseColor(cat.colorHex);
+      } else {
+        categoryColors[key] = categoryPalette[i % categoryPalette.length];
+      }
+    }
+
     final List<PieChartSectionData> chartSections = [];
     for (var entry in sortedEntries) {
       final cat = entry.key;
       final sum = entry.value;
-      final color = parseColor(cat.colorHex);
+      final color = categoryColors[cat.id.isNotEmpty ? cat.id : cat.name] ?? parseColor(cat.colorHex);
       
       chartSections.add(
         PieChartSectionData(
@@ -517,7 +553,7 @@ class _DashboardPageState extends State<DashboardPage> {
                     runSpacing: 8,
                     children: sortedEntries.map((entry) {
                       final cat = entry.key;
-                      final color = parseColor(cat.colorHex);
+                      final color = categoryColors[cat.id.isNotEmpty ? cat.id : cat.name] ?? parseColor(cat.colorHex);
                       return Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -577,7 +613,7 @@ class _DashboardPageState extends State<DashboardPage> {
                 final cat = entry.key;
                 final sum = entry.value;
                 final percent = totalOutflow > 0 ? (sum / totalOutflow) * 100 : 0.0;
-                final color = parseColor(cat.colorHex);
+                final color = categoryColors[cat.id.isNotEmpty ? cat.id : cat.name] ?? parseColor(cat.colorHex);
                 final iconData = getCategoryIcon(cat.icon);
 
                 // Determine if over budget for the trend arrow (up-red / down-green)
@@ -821,7 +857,7 @@ class _DashboardPageState extends State<DashboardPage> {
       }
       final cat = service.categories.firstWhere((c) => c.id == tx.categoryId,
           orElse: () => Category(id: '', name: 'Unknown', type: 'expense', createdAt: DateTime.now()));
-      if (cat.type == 'transfer' && tx.amount > 0) continue;
+      if (cat.type == 'transfer') continue;
       
       final amountInDisplay = service.convertToDisplay(tx.amount, tx.currency);
       final day = tx.date.day;

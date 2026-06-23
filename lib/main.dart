@@ -60,6 +60,11 @@ class BudgetApp extends StatelessWidget {
         title: 'Budget App Ledger',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.darkTheme,
+        builder: (context, child) {
+          return SelectionArea(
+            child: child ?? const SizedBox.shrink(),
+          );
+        },
         home: StreamBuilder<User?>(
           stream: FirebaseAuth.instance.authStateChanges(),
           builder: (context, snapshot) {
