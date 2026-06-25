@@ -111,15 +111,17 @@ class _SettingsPageState extends State<SettingsPage> {
             ],
           ),
         ),
-        body: Container(
-          decoration: const BoxDecoration(
-            gradient: AppTheme.backgroundGradient,
-          ),
-          child: TabBarView(
-            children: [
-              _buildCurrenciesTab(context, ds),
-              _buildRecurringTxTab(context, ds),
-            ],
+        body: SelectionArea(
+          child: Container(
+            decoration: const BoxDecoration(
+              gradient: AppTheme.backgroundGradient,
+            ),
+            child: TabBarView(
+              children: [
+                _buildCurrenciesTab(context, ds),
+                _buildRecurringTxTab(context, ds),
+              ],
+            ),
           ),
         ),
       ),

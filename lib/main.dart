@@ -95,11 +95,26 @@ class _MainLayoutState extends State<MainLayout> {
   bool _isDrawerOpenOnDesktop = true;
 
   final List<Widget> _pages = [
-    const DashboardPage(),
-    const LedgerPage(),
-    const AccountsPage(),
-    const HoldingsPage(),
+    // IMPORTANT: Wrap each view page individually in its own SelectionArea.
+    // Wrapping the root IndexedStack directly inside a single SelectionArea
+    // breaks global text selection due to offstage/hidden widgets sharing the registrar.
+    const SelectionArea(child: DashboardPage()),
+    const SelectionArea(child: LedgerPage()),
+    const SelectionArea(child: AccountsPage()),
+    const SelectionArea(child: HoldingsPage()),
   ];
+
+  void _onTabSelected(int index) {
+    if (_selectedIndex == index) return;
+    setState(() {
+      _selectedIndex = index;
+    });
+    if (index == 3) {
+      Provider.of<DataService>(context, listen: false).setDisplayCurrency('USD');
+    } else {
+      Provider.of<DataService>(context, listen: false).setDisplayCurrency('MXN');
+    }
+  }
 
   @override
   void initState() {
@@ -220,9 +235,7 @@ class _MainLayoutState extends State<MainLayout> {
                       label: 'Dashboard',
                       isSelected: _selectedIndex == 0,
                       onTap: () {
-                        setState(() {
-                          _selectedIndex = 0;
-                        });
+                        _onTabSelected(0);
                         if (!isDesktop) {
                           Navigator.pop(context);
                         }
@@ -234,9 +247,7 @@ class _MainLayoutState extends State<MainLayout> {
                       label: 'Ledger',
                       isSelected: _selectedIndex == 1,
                       onTap: () {
-                        setState(() {
-                          _selectedIndex = 1;
-                        });
+                        _onTabSelected(1);
                         if (!isDesktop) {
                           Navigator.pop(context);
                         }
@@ -248,9 +259,7 @@ class _MainLayoutState extends State<MainLayout> {
                       label: 'Accounts',
                       isSelected: _selectedIndex == 2,
                       onTap: () {
-                        setState(() {
-                          _selectedIndex = 2;
-                        });
+                        _onTabSelected(2);
                         if (!isDesktop) {
                           Navigator.pop(context);
                         }
@@ -262,9 +271,7 @@ class _MainLayoutState extends State<MainLayout> {
                       label: 'Holdings',
                       isSelected: _selectedIndex == 3,
                       onTap: () {
-                        setState(() {
-                          _selectedIndex = 3;
-                        });
+                        _onTabSelected(3);
                         if (!isDesktop) {
                           Navigator.pop(context);
                         }
@@ -422,8 +429,9 @@ class _MainLayoutState extends State<MainLayout> {
         decoration: const BoxDecoration(
           gradient: AppTheme.backgroundGradient,
         ),
-        child: SelectionArea(
-          child: _pages[_selectedIndex],
+        child: IndexedStack(
+          index: _selectedIndex,
+          children: _pages,
         ),
       ),
     );

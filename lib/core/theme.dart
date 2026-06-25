@@ -64,19 +64,28 @@ class AppTheme {
 
   static ThemeData get darkTheme {
     return ThemeData(
+      useMaterial3: true,
       brightness: Brightness.dark,
-      primaryColor: mainAction,
       scaffoldBackgroundColor: darkBackground,
-      cardColor: darkCard,
       textTheme: TextTheme(
         displayLarge: GoogleFonts.outfit(
           color: textPrimary,
           fontSize: 32,
           fontWeight: FontWeight.bold,
         ),
+        headlineMedium: GoogleFonts.outfit(
+          color: textPrimary,
+          fontSize: 24,
+          fontWeight: FontWeight.bold,
+        ),
         titleLarge: GoogleFonts.outfit(
           color: textPrimary,
           fontSize: 20,
+          fontWeight: FontWeight.w600,
+        ),
+        titleMedium: GoogleFonts.outfit(
+          color: textPrimary,
+          fontSize: 16,
           fontWeight: FontWeight.w600,
         ),
         bodyLarge: GoogleFonts.inter(
@@ -89,13 +98,18 @@ class AppTheme {
           fontSize: 14,
           fontWeight: FontWeight.normal,
         ),
+        labelLarge: GoogleFonts.inter(
+          color: textPrimary,
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
+        ),
       ),
       cardTheme: CardThemeData(
         color: darkCard,
-        elevation: 8,
+        elevation: 0,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
-          side: const BorderSide(color: Color(0xFF23232A), width: 1),
+          side: const BorderSide(color: Color(0xFF222226), width: 1),
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
@@ -109,7 +123,7 @@ class AppTheme {
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: Color(0xFF23232A), width: 1),
+          borderSide: const BorderSide(color: Color(0xFF222226), width: 1),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
@@ -118,9 +132,26 @@ class AppTheme {
       ),
       colorScheme: const ColorScheme.dark(
         primary: mainAction,
+        onPrimary: Color(0xFF09090B),
+        primaryContainer: Color(0xFF273800),
+        onPrimaryContainer: Color(0xFFD4FF80),
         secondary: secondaryColor,
-        surface: darkCard,
+        onSecondary: Colors.white,
+        secondaryContainer: Color(0xFF1E0041),
+        onSecondaryContainer: Color(0xFFEADBFF),
+        surface: darkBackground,
+        onSurface: textPrimary,
+        surfaceContainer: darkCard,
+        surfaceContainerHigh: Color(0xFF1D1D22),
+        outline: Color(0xFF222226),
+        outlineVariant: Color(0xFF2D2D37),
         error: dangerRed,
+        onError: Colors.white,
+      ),
+      textSelectionTheme: TextSelectionThemeData(
+        cursorColor: mainAction,
+        selectionColor: mainAction.withOpacity(0.3),
+        selectionHandleColor: mainAction,
       ),
     );
   }
