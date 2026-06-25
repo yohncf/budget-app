@@ -4,6 +4,7 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/data_service.dart';
 import '../models/holding.dart';
 import '../models/account.dart';
@@ -33,14 +34,67 @@ class _HoldingsPageState extends State<HoldingsPage> {
   DateTime _selectedDate = DateTime.now();
   int _selectedGroupIndex = -1;
 
+  // Selected time period filter for Portfolio Valuation Trend chart
+  String _selectedPeriod = 'all';
+
   @override
   void initState() {
     super.initState();
+    // Load the last selected period filter from persistent storage
+    _loadSelectedPeriod();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         Provider.of<DataService>(context, listen: false).setDisplayCurrency('USD');
       }
     });
+  }
+
+  // Load selected period from SharedPreferences
+  Future<void> _loadSelectedPeriod() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final savedPeriod = prefs.getString('holdings_selected_period');
+      if (savedPeriod != null && mounted) {
+        setState(() {
+          _selectedPeriod = savedPeriod;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading saved period: $e');
+    }
+  }
+
+  // Save selected period to SharedPreferences to persist choice across sessions
+  Future<void> _saveSelectedPeriod(String period) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('holdings_selected_period', period);
+    } catch (e) {
+      debugPrint('Error saving selected period: $e');
+    }
+  }
+
+  // Helper method to compute dynamic cutoff date for historical range slicing
+  DateTime _getCutoffDate(String period) {
+    final now = DateTime.now();
+    // Normalize to the start of today to make date comparisons cleaner
+    final today = DateTime(now.year, now.month, now.day);
+    switch (period) {
+      case '1M':
+        return DateTime(today.year, today.month - 1, today.day);
+      case '3M':
+        return DateTime(today.year, today.month - 3, today.day);
+      case '6M':
+        return DateTime(today.year, today.month - 6, today.day);
+      case '1Y':
+        return DateTime(today.year - 1, today.month, today.day);
+      case '5Y':
+        return DateTime(today.year - 5, today.month, today.day);
+      case 'all':
+      default:
+        // Set date to a far past value to include the whole timeline
+        return DateTime(1900);
+    }
   }
 
   @override
@@ -252,6 +306,54 @@ class _HoldingsPageState extends State<HoldingsPage> {
     );
   }
 
+  // Build a horizontal row of filter chips for timeline period selection
+  Widget _buildPeriodChips() {
+    final periods = ['1M', '3M', '6M', '1Y', '5Y', 'all'];
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: periods.map((period) {
+          final isSelected = _selectedPeriod == period;
+          return Padding(
+            padding: const EdgeInsets.only(right: 8.0),
+            child: InkWell(
+              onTap: () {
+                setState(() {
+                  _selectedPeriod = period;
+                  _saveSelectedPeriod(period);
+                });
+              },
+              borderRadius: BorderRadius.circular(8),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                decoration: BoxDecoration(
+                  // Use transparent for unselected, subtle accent cyan overlay for selected state
+                  color: isSelected
+                      ? AppTheme.accentCyan.withOpacity(0.12)
+                      : const Color(0xFF1D1D22),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: isSelected ? AppTheme.accentCyan : const Color(0xFF222226),
+                    width: 1,
+                  ),
+                ),
+                child: Text(
+                  period,
+                  style: TextStyle(
+                    color: isSelected ? AppTheme.accentCyan : AppTheme.textSecondary,
+                    fontSize: 12,
+                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                  ),
+                ),
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
   Widget _buildValuationGraphCard(BuildContext context, DataService service) {
     final history = _calculateHistoricalValuation(service);
     
@@ -282,25 +384,36 @@ class _HoldingsPageState extends State<HoldingsPage> {
       );
     }
 
-    final firstDate = history.first['date'] as DateTime;
+    // Filter historical points by the active period filter key (e.g. '1M', '3M', etc.)
+    final cutoffDate = _getCutoffDate(_selectedPeriod);
+    final filteredHistory = history.where((point) {
+      final date = point['date'] as DateTime;
+      return !date.isBefore(cutoffDate);
+    }).toList();
+
+    // Fall back to entire history if the filtered result is empty to avoid rendering crash
+    final displayHistory = filteredHistory.isNotEmpty ? filteredHistory : history;
+
+    // Use the first point in our filtered range as the coordinate origin (minX = 0.0)
+    final firstDate = displayHistory.first['date'] as DateTime;
     final List<FlSpot> spots = [];
     
-    for (int i = 0; i < history.length; i++) {
-      final date = history[i]['date'] as DateTime;
-      final value = history[i]['value'] as double;
+    for (int i = 0; i < displayHistory.length; i++) {
+      final date = displayHistory[i]['date'] as DateTime;
+      final value = displayHistory[i]['value'] as double;
       final days = date.difference(firstDate).inDays.toDouble();
       spots.add(FlSpot(days, value));
     }
 
-    // Determine boundaries
+    // Determine boundaries based on filtered timeline range
     double minX = 0.0;
-    double maxX = history.last['date'].difference(firstDate).inDays.toDouble();
+    double maxX = displayHistory.last['date'].difference(firstDate).inDays.toDouble();
     if (maxX == 0.0) maxX = 1.0; // Avoid division by zero
 
-    double minY = history.map((e) => e['value'] as double).reduce((a, b) => a < b ? a : b);
-    double maxY = history.map((e) => e['value'] as double).reduce((a, b) => a > b ? a : b);
+    double minY = displayHistory.map((e) => e['value'] as double).reduce((a, b) => a < b ? a : b);
+    double maxY = displayHistory.map((e) => e['value'] as double).reduce((a, b) => a > b ? a : b);
     
-    // Add margins to Y axis
+    // Add margins to Y axis for better visual breathing room
     final yMargin = (maxY - minY) * 0.15;
     minY = (minY - yMargin).clamp(0.0, double.infinity);
     maxY = maxY + (yMargin == 0.0 ? 1000.0 : yMargin);
@@ -321,7 +434,9 @@ class _HoldingsPageState extends State<HoldingsPage> {
               'Cumulative net worth of investments in ${service.displayCurrency}',
               style: Theme.of(context).textTheme.bodyMedium,
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 16),
+            _buildPeriodChips(),
+            const SizedBox(height: 20),
             SizedBox(
               height: 300,
               child: LineChart(
