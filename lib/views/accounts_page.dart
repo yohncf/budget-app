@@ -29,6 +29,16 @@ class _AccountsPageState extends State<AccountsPage> {
   final _limitController = TextEditingController();
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        Provider.of<DataService>(context, listen: false).setDisplayCurrency('MXN');
+      }
+    });
+  }
+
+  @override
   void dispose() {
     _nameController.dispose();
     _institutionController.dispose();
@@ -540,10 +550,6 @@ class _AccountsPageState extends State<AccountsPage> {
     final bool isActive = account.status == 'active';
     final bool isZero = totalVal.abs() < 0.005;
 
-    final nameController = TextEditingController(text: account.name);
-    final instController = TextEditingController(text: account.institution ?? '');
-    final limitController = TextEditingController(text: account.limit == 0.0 ? '' : account.limit.toString());
-
     showDialog(
       context: context,
       builder: (context) {
@@ -570,57 +576,21 @@ class _AccountsPageState extends State<AccountsPage> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                  TextField(
-                    controller: nameController,
-                    decoration: const InputDecoration(labelText: 'Account Name'),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: instController,
-                    decoration: const InputDecoration(labelText: 'Institution'),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: limitController,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    decoration: const InputDecoration(
-                      labelText: 'Account Limit / Constraint',
-                      hintText: 'Credit limit or minimum balance (e.g. 500)',
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  ElevatedButton(
+                  ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppTheme.mainAction,
                       foregroundColor: Colors.black,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     ),
-                    child: const Text('Save Details', style: TextStyle(fontWeight: FontWeight.bold)),
-                    onPressed: () async {
-                      if (nameController.text.trim().isEmpty) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Please enter an account name.')),
-                        );
-                        return;
-                      }
-                      final double newLimit = double.tryParse(limitController.text) ?? 0.0;
-                      final updatedAccount = account.copyWith(
-                        name: nameController.text.trim(),
-                        institution: instController.text.trim().isEmpty ? null : instController.text.trim(),
-                        limit: newLimit,
-                        updatedAt: DateTime.now(),
-                      );
-                      await dataService.addAccount(updatedAccount);
-                      if (context.mounted) {
-                        Navigator.of(context).pop();
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Account details updated successfully.')),
-                        );
-                      }
+                    icon: const Icon(Icons.edit_outlined),
+                    label: const Text('Edit Account Details', style: TextStyle(fontWeight: FontWeight.bold)),
+                    onPressed: () {
+                      Navigator.of(context).pop();
+                      _showEditAccountDialog(context, account, dataService);
                     },
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 12),
                   const Divider(color: Color(0xFF2E2E4A)),
                   const SizedBox(height: 12),
                   ElevatedButton.icon(
@@ -708,6 +678,15 @@ class _AccountsPageState extends State<AccountsPage> {
             ),
           ],
         );
+      },
+    );
+  }
+
+  void _showEditAccountDialog(BuildContext context, Account account, DataService dataService) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return _EditAccountDialog(account: account, dataService: dataService);
       },
     );
   }
@@ -1075,6 +1054,219 @@ class _AccountsPageState extends State<AccountsPage> {
           },
         );
       },
+    );
+  }
+}
+
+class _EditAccountDialog extends StatefulWidget {
+  final Account account;
+  final DataService dataService;
+
+  const _EditAccountDialog({
+    required this.account,
+    required this.dataService,
+  });
+
+  @override
+  State<_EditAccountDialog> createState() => _EditAccountDialogState();
+}
+
+class _EditAccountDialogState extends State<_EditAccountDialog> {
+  late final TextEditingController _nameController;
+  late final TextEditingController _institutionController;
+  late final TextEditingController _balanceController;
+  late final TextEditingController _limitController;
+
+  late String _selectedType;
+  late String _selectedCurrency;
+  String? _selectedGroup;
+  late String _selectedStatus;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController(text: widget.account.name);
+    _institutionController = TextEditingController(text: widget.account.institution ?? '');
+    _balanceController = TextEditingController(text: widget.account.currentBalance.toString());
+    _limitController = TextEditingController(text: widget.account.limit == 0.0 ? '' : widget.account.limit.toString());
+
+    _selectedType = widget.account.type;
+    _selectedCurrency = widget.account.currency;
+    _selectedGroup = widget.account.accountGroup;
+    _selectedStatus = widget.account.status;
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _institutionController.dispose();
+    _balanceController.dispose();
+    _limitController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      scrollable: true,
+      backgroundColor: AppTheme.darkCard,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      title: Row(
+        children: [
+          const Icon(Icons.edit_outlined, color: AppTheme.mainAction),
+          const SizedBox(width: 8),
+          const Text('Edit Account Details'),
+        ],
+      ),
+      content: SizedBox(
+        width: 450,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _nameController,
+              decoration: const InputDecoration(
+                labelText: 'Account Name',
+                hintText: 'e.g. Chase Checking',
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _institutionController,
+              decoration: const InputDecoration(
+                labelText: 'Institution',
+                hintText: 'e.g. Chase Bank',
+              ),
+            ),
+            const SizedBox(height: 16),
+            DropdownButtonFormField<String>(
+              value: _selectedType,
+              decoration: const InputDecoration(labelText: 'Account Type'),
+              items: ['checking', 'savings', 'credit_card', 'investment', 'crypto_wallet', 'retirement'].map((t) {
+                return DropdownMenuItem(value: t, child: Text(t.toUpperCase()));
+              }).toList(),
+              onChanged: (val) => setState(() => _selectedType = val!),
+            ),
+            const SizedBox(height: 16),
+            DropdownButtonFormField<String>(
+              value: _selectedCurrency,
+              decoration: const InputDecoration(labelText: 'Account Currency'),
+              items: (() {
+                final list = List<String>.from(widget.dataService.availableDisplayCurrencies);
+                if (!list.contains(_selectedCurrency)) {
+                  list.add(_selectedCurrency);
+                }
+                return list;
+              })().map((c) {
+                return DropdownMenuItem(value: c, child: Text(c));
+              }).toList(),
+              onChanged: (val) => setState(() => _selectedCurrency = val!),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _balanceController,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
+              decoration: const InputDecoration(
+                labelText: 'Current Balance',
+                hintText: 'e.g. 1500.00',
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _limitController,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                labelText: 'Account Limit / Constraint',
+                hintText: 'Credit limit or minimum balance',
+              ),
+            ),
+            const SizedBox(height: 16),
+            DropdownButtonFormField<String?>(
+              value: _selectedGroup,
+              decoration: const InputDecoration(labelText: 'Account Group'),
+              items: const [
+                DropdownMenuItem<String?>(value: null, child: Text('NONE')),
+                DropdownMenuItem<String?>(value: 'liquid_assets', child: Text('LIQUID ASSETS')),
+                DropdownMenuItem<String?>(value: 'credit', child: Text('CREDIT')),
+                DropdownMenuItem<String?>(value: 'capital', child: Text('CAPITAL')),
+                DropdownMenuItem<String?>(value: 'retirement', child: Text('RETIREMENT')),
+              ],
+              onChanged: (val) => setState(() => _selectedGroup = val),
+            ),
+            const SizedBox(height: 16),
+            DropdownButtonFormField<String>(
+              value: _selectedStatus,
+              decoration: const InputDecoration(labelText: 'Account Status'),
+              items: ['active', 'archived'].map((s) {
+                return DropdownMenuItem(value: s, child: Text(s.toUpperCase()));
+              }).toList(),
+              onChanged: (val) => setState(() => _selectedStatus = val!),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          child: const Text('Cancel', style: TextStyle(color: AppTheme.textSecondary)),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppTheme.mainAction,
+            foregroundColor: Colors.black,
+          ),
+          child: const Text('Save Changes', style: TextStyle(fontWeight: FontWeight.bold)),
+          onPressed: () async {
+            if (_nameController.text.trim().isEmpty) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Please enter an account name.')),
+              );
+              return;
+            }
+
+            final double? parsedBalance = double.tryParse(_balanceController.text.trim());
+            if (parsedBalance == null) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Please enter a valid balance value.')),
+              );
+              return;
+            }
+
+            final double parsedLimit = double.tryParse(_limitController.text.trim()) ?? 0.0;
+
+            final updatedAccount = widget.account.copyWith(
+              name: _nameController.text.trim(),
+              institution: _institutionController.text.trim().isEmpty ? null : _institutionController.text.trim(),
+              type: _selectedType,
+              currency: _selectedCurrency,
+              currentBalance: parsedBalance,
+              limit: parsedLimit,
+              accountGroup: _selectedGroup,
+              status: _selectedStatus,
+              updatedAt: DateTime.now(),
+            );
+
+            final messenger = ScaffoldMessenger.of(context);
+            FocusManager.instance.primaryFocus?.unfocus();
+            await Future.delayed(Duration.zero);
+
+            if (context.mounted) {
+              Navigator.of(context).pop();
+            }
+
+            try {
+              await widget.dataService.addAccount(updatedAccount);
+              messenger.showSnackBar(
+                SnackBar(content: Text('Account "${updatedAccount.name}" updated successfully.')),
+              );
+            } catch (e) {
+              messenger.showSnackBar(
+                SnackBar(content: Text('Error: ${e.toString()}')),
+              );
+            }
+          },
+        ),
+      ],
     );
   }
 }

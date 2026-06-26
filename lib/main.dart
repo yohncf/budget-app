@@ -12,6 +12,7 @@ import 'views/accounts_page.dart';
 import 'views/login_page.dart';
 import 'views/holdings_page.dart';
 import 'views/settings_page.dart';
+import 'views/add_transaction_dialog.dart';
 
 
 void main() async {
@@ -119,6 +120,12 @@ class _MainLayoutState extends State<MainLayout> {
   @override
   void initState() {
     super.initState();
+    // Default the display currency to MXN on startup
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        Provider.of<DataService>(context, listen: false).setDisplayCurrency('MXN');
+      }
+    });
   }
 
   Widget _buildSparkleLogo() {
@@ -433,6 +440,21 @@ class _MainLayoutState extends State<MainLayout> {
           index: _selectedIndex,
           children: _pages,
         ),
+      ),
+      floatingActionButton: FloatingActionButton(
+        backgroundColor: AppTheme.mainAction,
+        foregroundColor: Colors.black,
+        shape: const CircleBorder(),
+        tooltip: 'Add Transaction',
+        onPressed: () {
+          showDialog(
+            context: context,
+            builder: (context) => AddTransactionDialog(
+              dataService: Provider.of<DataService>(context, listen: false),
+            ),
+          );
+        },
+        child: const Icon(Icons.add),
       ),
     );
 

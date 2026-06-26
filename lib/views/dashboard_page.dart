@@ -23,6 +23,11 @@ class _DashboardPageState extends State<DashboardPage> {
   void initState() {
     super.initState();
     _selectedMonth = DateTime(DateTime.now().year, DateTime.now().month);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        Provider.of<DataService>(context, listen: false).setDisplayCurrency('MXN');
+      }
+    });
   }
 
   List<DateTime> _getAvailableMonths() {

@@ -10,6 +10,7 @@ import '../models/holding.dart';
 import '../models/account.dart';
 import '../models/asset_transaction.dart';
 import '../models/asset.dart';
+import '../models/transaction.dart';
 import '../core/theme.dart';
 
 class HoldingsPage extends StatefulWidget {
@@ -32,6 +33,7 @@ class _HoldingsPageState extends State<HoldingsPage> {
   String _selectedAssetType = 'stock'; // stock, crypto, etf
   String _selectedTxType = 'buy'; // buy, sell, dividend_reinvest, split, reward
   DateTime _selectedDate = DateTime.now();
+  Transaction? _selectedLinkedTx;
   int _selectedGroupIndex = -1;
 
   // Selected time period filter for Portfolio Valuation Trend chart
@@ -42,11 +44,6 @@ class _HoldingsPageState extends State<HoldingsPage> {
     super.initState();
     // Load the last selected period filter from persistent storage
     _loadSelectedPeriod();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        Provider.of<DataService>(context, listen: false).setDisplayCurrency('USD');
-      }
-    });
   }
 
   // Load selected period from SharedPreferences
@@ -1277,12 +1274,25 @@ class _HoldingsPageState extends State<HoldingsPage> {
     _selectedAssetType = 'stock';
     _selectedTxType = 'buy';
     _selectedDate = DateTime.now();
+    _selectedLinkedTx = null; // Reset selected linked transaction state
 
     showDialog(
       context: context,
       builder: (context) {
         return StatefulBuilder(
           builder: (context, setDialogState) {
+            // Filter and sort active cash ledger transactions belonging to the selected account
+            final linkedTxsList = service.transactions
+                .where((t) => t.status != 'deleted' && t.accountId == _selectedAccount?.id)
+                .toList();
+            linkedTxsList.sort((a, b) => b.date.compareTo(a.date));
+            final recentTxs = linkedTxsList.take(20).toList();
+            
+            // Ensure currently selected linked transaction remains in the dropdown items list
+            if (_selectedLinkedTx != null && !recentTxs.any((t) => t.id == _selectedLinkedTx!.id)) {
+              recentTxs.add(_selectedLinkedTx!);
+            }
+
             return AlertDialog(
               backgroundColor: AppTheme.darkCard,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -1313,6 +1323,45 @@ class _HoldingsPageState extends State<HoldingsPage> {
                         onChanged: (val) {
                           setDialogState(() {
                             _selectedAccount = val;
+                            // Reset the selected cash transaction link if the account changes
+                            _selectedLinkedTx = null;
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 12),
+
+                      // Optional cash transaction linkage dropdown (representing transaction_id column)
+                      DropdownButtonFormField<Transaction?>(
+                        value: _selectedLinkedTx,
+                        decoration: const InputDecoration(
+                          labelText: 'Linked Cash Transaction (Optional)',
+                          helperText: 'Associate this asset transaction with a ledger record',
+                        ),
+                        items: [
+                          const DropdownMenuItem<Transaction?>(
+                            value: null,
+                            child: Text('None / No Link', style: TextStyle(color: AppTheme.textSecondary)),
+                          ),
+                          ...recentTxs.map((t) {
+                            final dateStr = DateFormat('yyyy-MM-dd').format(t.date);
+                            final amtStr = service.formatCurrencyWith(t.amount, t.currency);
+                            // Safe-guard description nullability and truncate if it is too long to prevent layout overflow
+                            final descriptionText = t.description ?? '';
+                            final desc = descriptionText.length > 25
+                                ? '${descriptionText.substring(0, 22)}...'
+                                : descriptionText;
+                            return DropdownMenuItem<Transaction?>(
+                              value: t,
+                              child: Text(
+                                '[$dateStr] $desc ($amtStr)',
+                                style: const TextStyle(fontSize: 13),
+                              ),
+                            );
+                          }),
+                        ],
+                        onChanged: (val) {
+                          setDialogState(() {
+                            _selectedLinkedTx = val;
                           });
                         },
                       ),
@@ -1469,6 +1518,7 @@ class _HoldingsPageState extends State<HoldingsPage> {
                     final assetTxId = _uuid.v4().substring(0, 20);
                     final newAssetTx = AssetTransaction(
                       id: assetTxId,
+                      transactionId: _selectedLinkedTx?.id, // Link to matching cash ledger transaction (representing transaction_id column)
                       accountId: _selectedAccount!.id,
                       assetId: symbol, // Using symbol as simple assetId
                       type: _selectedTxType,
