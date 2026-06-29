@@ -735,7 +735,7 @@ class DataService extends ChangeNotifier {
         await _firestore.saveTransaction(deletedTx);
 
         // CUSTOMIZATION PREFERENCE: Delete corresponding CASH asset transaction
-        final account = accounts.firstWhere((a) => a.id == tx.accountId, orElse: () => null);
+        final account = accounts.cast<Account?>().firstWhere((a) => a?.id == tx.accountId, orElse: () => null);
         if (account != null && account.accountGroup == 'capital') {
           final cashAssetTxId = 'cash_asset_' + tx.id;
           await _firestore.deleteAssetTransaction(cashAssetTxId);
@@ -873,7 +873,7 @@ class DataService extends ChangeNotifier {
 
     // CUSTOMIZATION PREFERENCE: Delete corresponding cash ledger transaction (which deletes CASH asset transaction)
     if (assetTx.transactionId != null) {
-      final cashTx = transactions.firstWhere((t) => t.id == assetTx.transactionId, orElse: () => null);
+      final cashTx = transactions.cast<Transaction?>().firstWhere((t) => t?.id == assetTx.transactionId, orElse: () => null);
       if (cashTx != null) {
         await deleteTransaction(cashTx);
       }
@@ -1340,7 +1340,7 @@ class DataService extends ChangeNotifier {
       // CUSTOMIZATION PREFERENCE: Generate any missing CASH asset transactions for legacy capital account cash flows
       for (final tx in transactions) {
         if (tx.status == 'deleted') continue;
-        final account = accounts.firstWhere((a) => a.id == tx.accountId, orElse: () => null);
+        final account = accounts.cast<Account?>().firstWhere((a) => a?.id == tx.accountId, orElse: () => null);
         if (account != null && account.accountGroup == 'capital') {
           final cashAssetTxId = 'cash_asset_' + tx.id;
           final exists = assetTransactions.any((at) => at.id == cashAssetTxId);
