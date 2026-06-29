@@ -758,7 +758,7 @@ class _AccountsPageState extends State<AccountsPage> {
               ),
               child: const Text('Create'),
               onPressed: () async {
-                final String snapshotId = const Uuid().v4().substring(0, 20);
+                final String snapshotId = const Uuid().v4().replaceAll('-', '').substring(0, 20);
                 final newSnapshot = AccountSnapshot(
                   id: snapshotId,
                   accountId: account.id,
@@ -841,7 +841,7 @@ class _AccountsPageState extends State<AccountsPage> {
                 Navigator.of(context).pop();
 
                 for (var account in activeAccounts) {
-                  final String snapshotId = const Uuid().v4().substring(0, 20);
+                  final String snapshotId = const Uuid().v4().replaceAll('-', '').substring(0, 20);
                   final newSnapshot = AccountSnapshot(
                     id: snapshotId,
                     accountId: account.id,
@@ -1098,7 +1098,7 @@ class _AccountsPageState extends State<AccountsPage> {
 
                     final double initBalance = double.tryParse(_balanceController.text) ?? 0.0;
                     final double limitVal = double.tryParse(_limitController.text) ?? 0.0;
-                    final accId = _uuid.v4().substring(0, 20);
+                    final accId = _uuid.v4().replaceAll('-', '').substring(0, 20);
 
                     final newAcc = Account(
                       id: accId,
@@ -1148,7 +1148,7 @@ class _AccountsPageState extends State<AccountsPage> {
                         }
 
                         final opTx = Transaction(
-                          id: _uuid.v4().substring(0, 20),
+                          id: _uuid.v4().replaceAll('-', '').substring(0, 20),
                           accountId: accId,
                           categoryId: opCat.id,
                           amount: initBalance,

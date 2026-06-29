@@ -883,8 +883,8 @@ class _AddTransactionDialogState extends State<AddTransactionDialog> {
                     // 1. Outflow transaction
                     final outflowTx = Transaction(
                       id: (editTx != null && transferTag != null)
-                          ? (editTx.amount < 0 ? editTx.id : (pairedTx?.id ?? _uuid.v4().substring(0, 20)))
-                          : _uuid.v4().substring(0, 20),
+                          ? (editTx.amount < 0 ? editTx.id : (pairedTx?.id ?? _uuid.v4().replaceAll('-', '').substring(0, 20)))
+                          : _uuid.v4().replaceAll('-', '').substring(0, 20),
                       accountId: _selectedAccountId!,
                       categoryId: _selectedCategoryId!,
                       amount: -absAmount,
@@ -916,8 +916,8 @@ class _AddTransactionDialogState extends State<AddTransactionDialog> {
                     final inflowAmount = dataService.convert(absAmount, sourceAccount.currency, destAccount.currency);
                     final inflowTx = Transaction(
                       id: (editTx != null && transferTag != null)
-                          ? (editTx.amount >= 0 ? editTx.id : (pairedTx?.id ?? _uuid.v4().substring(0, 20)))
-                          : _uuid.v4().substring(0, 20),
+                          ? (editTx.amount >= 0 ? editTx.id : (pairedTx?.id ?? _uuid.v4().replaceAll('-', '').substring(0, 20)))
+                          : _uuid.v4().replaceAll('-', '').substring(0, 20),
                       accountId: _selectedTransferToAccountId!,
                       categoryId: destCategoryId,
                       amount: inflowAmount,
@@ -953,7 +953,7 @@ class _AddTransactionDialogState extends State<AddTransactionDialog> {
                     final double exRate = dataService.convert(1.0, txCurrency, selectedAccount.currency);
 
                     final newTx = Transaction(
-                      id: editTx?.id ?? _uuid.v4().substring(0, 20),
+                      id: editTx?.id ?? _uuid.v4().replaceAll('-', '').substring(0, 20),
                       accountId: _selectedAccountId!,
                       categoryId: _selectedCategoryId!,
                       amount: finalAmount,

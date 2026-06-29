@@ -27,7 +27,7 @@ class DataService extends ChangeNotifier {
   List<Asset> assets = [];
   List<BudgetTarget> budgetTargets = [];
   List<RecurringTransaction> recurringTransactions = [];
-  bool _hasHealedV4 = false; // CUSTOMIZATION PREFERENCE: Protect from multiple runs of healing script
+  bool _hasHealedV5 = false; // CUSTOMIZATION PREFERENCE: Protect from multiple runs of healing script
 
   // Live asset prices from Alpha Vantage API
   final Map<String, double> currentAssetPrices = {};
@@ -1321,11 +1321,45 @@ class DataService extends ChangeNotifier {
 
   // CUSTOMIZATION PREFERENCE: Self-healing routine to fix incorrect assetId records and missing cash operations
   Future<void> _healDatabaseRecordsOnce() async {
-    if (_hasHealedV4) return;
+    if (_hasHealedV5) return;
     if (accounts.isEmpty || categories.isEmpty || assets.isEmpty || assetTransactions.isEmpty || transactions.isEmpty) return;
-    _hasHealedV4 = true;
+    _hasHealedV5 = true;
 
     try {
+      // CUSTOMIZATION PREFERENCE: Fix bad recurring transaction ID 'rt_9cc64930-b505-4' to follow 20-char schema
+      final badRtIndex = recurringTransactions.indexWhere((rt) => rt.id == 'rt_9cc64930-b505-4');
+      if (badRtIndex != -1) {
+        final badRt = recurringTransactions[badRtIndex];
+        final newRtId = '9cc64930b5054d3ba840';
+        debugPrint('Found bad recurring transaction ID: ${badRt.id}. Migrating to $newRtId...');
+
+        // 1. Update any transactions referencing this recurring ID
+        for (final tx in transactions) {
+          if (tx.recurringId == badRt.id) {
+            final correctedTx = tx.copyWith(recurringId: newRtId);
+            await _firestore.saveTransaction(correctedTx);
+          }
+        }
+
+        // 2. Delete the old recurring transaction template
+        await deleteRecurringTransaction(badRt.id);
+
+        // 3. Create the corrected template with new ID
+        final correctedRt = RecurringTransaction(
+          id: newRtId,
+          accountId: badRt.accountId,
+          categoryId: badRt.categoryId,
+          amount: badRt.amount,
+          frequency: badRt.frequency,
+          interval: badRt.interval,
+          startDate: badRt.startDate,
+          endDate: badRt.endDate,
+          nextDueDate: badRt.nextDueDate,
+          status: badRt.status,
+          description: badRt.description,
+        );
+        await _firestore.saveRecurringTransaction(correctedRt);
+      }
       // CUSTOMIZATION PREFERENCE: Fix bad Cash asset ID '[#9f69c]' and merge it into 'CASH'
       final badCashAsset = assets.cast<Asset?>().firstWhere(
         (a) => a != null && (a.id.contains('9f69c') || a.id == '[#9f69c]'),

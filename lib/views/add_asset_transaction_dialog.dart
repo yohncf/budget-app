@@ -353,7 +353,7 @@ class _AddAssetTransactionDialogState extends State<AddAssetTransactionDialog> {
               return;
             }
 
-            final assetTxId = _uuid.v4().substring(0, 20);
+            final assetTxId = _uuid.v4().replaceAll('-', '').substring(0, 20);
             // CUSTOMIZATION PREFERENCE: Must bind the database ID of the selected asset (_selectedAsset.id)
             // instead of the raw ticker symbol text, to maintain database referential integrity and support accurate
             // holding calculations. Fallback to raw symbol only if no asset match is selected (which shouldn't happen).

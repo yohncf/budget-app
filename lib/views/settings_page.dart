@@ -531,8 +531,9 @@ class _SettingsPageState extends State<SettingsPage> {
                         label: const Text('Add Recurring Template', style: TextStyle(fontWeight: FontWeight.bold)),
                         onPressed: () async {
                           if (_formKey.currentState!.validate()) {
+                            // CUSTOMIZATION PREFERENCE: Ensure IDs conform to the 20-character alphanumeric schema (without prefix/hyphens) to match database constraints.
                             final template = RecurringTransaction(
-                              id: 'rt_${_uuid.v4().substring(0, 15)}',
+                              id: _uuid.v4().replaceAll('-', '').substring(0, 20),
                               accountId: _selectedAccountId!,
                               categoryId: _selectedCategoryId!,
                               amount: double.parse(_amountController.text),
