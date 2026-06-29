@@ -27,7 +27,7 @@ class DataService extends ChangeNotifier {
   List<Asset> assets = [];
   List<BudgetTarget> budgetTargets = [];
   List<RecurringTransaction> recurringTransactions = [];
-  bool _hasHealedV3 = false; // CUSTOMIZATION PREFERENCE: Protect from multiple runs of healing script
+  bool _hasHealedV4 = false; // CUSTOMIZATION PREFERENCE: Protect from multiple runs of healing script
 
   // Live asset prices from Alpha Vantage API
   final Map<String, double> currentAssetPrices = {};
@@ -1321,11 +1321,42 @@ class DataService extends ChangeNotifier {
 
   // CUSTOMIZATION PREFERENCE: Self-healing routine to fix incorrect assetId records and missing cash operations
   Future<void> _healDatabaseRecordsOnce() async {
-    if (_hasHealedV3) return;
+    if (_hasHealedV4) return;
     if (accounts.isEmpty || categories.isEmpty || assets.isEmpty || assetTransactions.isEmpty || transactions.isEmpty) return;
-    _hasHealedV3 = true;
+    _hasHealedV4 = true;
 
     try {
+      // CUSTOMIZATION PREFERENCE: Fix bad Cash asset ID '[#9f69c]' and merge it into 'CASH'
+      final badCashAsset = assets.cast<Asset?>().firstWhere(
+        (a) => a != null && (a.id.contains('9f69c') || a.id == '[#9f69c]'),
+        orElse: () => null,
+      );
+
+      if (badCashAsset != null) {
+        final badId = badCashAsset.id;
+        debugPrint('Found bad CASH asset ID: $badId. Migrating to "CASH"...');
+
+        // 1. Correct any asset transactions referencing the bad ID
+        final badTxs = assetTransactions.where((tx) => tx.assetId == badId).toList();
+        for (final tx in badTxs) {
+          final correctedTx = tx.copyWith(assetId: 'CASH', assetSymbol: 'CASH', assetName: 'Cash');
+          await _firestore.saveAssetTransaction(correctedTx);
+        }
+
+        // 2. Delete holdings referencing the bad ID
+        final badHoldings = holdings.where((h) => h.assetId == badId).toList();
+        for (final h in badHoldings) {
+          await _firestore.deleteHolding(h.id);
+        }
+
+        // 3. Delete the bad asset metadata document
+        await deleteAsset(badId);
+
+        // 4. Force recalculation of 'CASH' holding for affected accounts
+        for (final tx in badTxs) {
+          await recalculateHoldingFromScratch(tx.accountId, 'CASH');
+        }
+      }
       // CUSTOMIZATION PREFERENCE: Make sure the CASH asset type is registered in the database
       final cashAssetExists = assets.any((a) => a.id == 'CASH');
       if (!cashAssetExists) {

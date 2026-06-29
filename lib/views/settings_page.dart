@@ -734,6 +734,7 @@ class _SettingsPageState extends State<SettingsPage> {
                         DropdownMenuItem(value: 'stock', child: Text('Stock')),
                         DropdownMenuItem(value: 'crypto', child: Text('Crypto')),
                         DropdownMenuItem(value: 'etf', child: Text('ETF')),
+                        DropdownMenuItem(value: 'cash', child: Text('Cash')),
                         DropdownMenuItem(value: 'other', child: Text('Other')),
                       ],
                       onChanged: (val) {
@@ -1005,6 +1006,7 @@ class _SettingsPageState extends State<SettingsPage> {
                         DropdownMenuItem(value: 'stock', child: Text('Stock')),
                         DropdownMenuItem(value: 'crypto', child: Text('Crypto')),
                         DropdownMenuItem(value: 'etf', child: Text('ETF')),
+                        DropdownMenuItem(value: 'cash', child: Text('Cash')),
                         DropdownMenuItem(value: 'other', child: Text('Other')),
                       ],
                       onChanged: (val) {
