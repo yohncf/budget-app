@@ -13,6 +13,8 @@ import 'views/login_page.dart';
 import 'views/holdings_page.dart';
 import 'views/settings_page.dart';
 import 'views/add_transaction_dialog.dart';
+import 'views/asset_ledger_page.dart';
+import 'views/add_asset_transaction_dialog.dart';
 
 
 void main() async {
@@ -94,6 +96,7 @@ class MainLayout extends StatefulWidget {
 class _MainLayoutState extends State<MainLayout> {
   int _selectedIndex = 0;
   bool _isDrawerOpenOnDesktop = true;
+  bool _isFabMenuOpen = false;
 
   final List<Widget> _pages = [
     // IMPORTANT: Wrap each view page individually in its own SelectionArea.
@@ -103,6 +106,7 @@ class _MainLayoutState extends State<MainLayout> {
     const SelectionArea(child: LedgerPage()),
     const SelectionArea(child: AccountsPage()),
     const SelectionArea(child: HoldingsPage()),
+    const SelectionArea(child: AssetLedgerPage()), // CUSTOMIZATION PREFERENCE: Asset Ledger view added
   ];
 
   void _onTabSelected(int index) {
@@ -110,7 +114,7 @@ class _MainLayoutState extends State<MainLayout> {
     setState(() {
       _selectedIndex = index;
     });
-    if (index == 3) {
+    if (index == 3 || index == 4) {
       Provider.of<DataService>(context, listen: false).setDisplayCurrency('USD');
     } else {
       Provider.of<DataService>(context, listen: false).setDisplayCurrency('MXN');
@@ -284,6 +288,18 @@ class _MainLayoutState extends State<MainLayout> {
                         }
                       },
                     ),
+                    _buildDrawerItem(
+                      iconSelected: Icons.history,
+                      iconUnselected: Icons.history_outlined,
+                      label: 'Asset Ledger',
+                      isSelected: _selectedIndex == 4,
+                      onTap: () {
+                        _onTabSelected(4);
+                        if (!isDesktop) {
+                          Navigator.pop(context);
+                        }
+                      },
+                    ),
                   ]),
                 ),
                 SliverFillRemaining(
@@ -432,29 +448,86 @@ class _MainLayoutState extends State<MainLayout> {
         backgroundColor: AppTheme.darkCard,
         child: _buildDrawerContent(context, isDesktop: false),
       ),
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: AppTheme.backgroundGradient,
-        ),
-        child: IndexedStack(
-          index: _selectedIndex,
-          children: _pages,
-        ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        backgroundColor: AppTheme.mainAction,
-        foregroundColor: Colors.black,
-        shape: const CircleBorder(),
-        tooltip: 'Add Transaction',
-        onPressed: () {
-          showDialog(
-            context: context,
-            builder: (context) => AddTransactionDialog(
-              dataService: Provider.of<DataService>(context, listen: false),
+      body: Stack(
+        children: [
+          Container(
+            decoration: const BoxDecoration(
+              gradient: AppTheme.backgroundGradient,
             ),
-          );
-        },
-        child: const Icon(Icons.add),
+            child: IndexedStack(
+              index: _selectedIndex,
+              children: _pages,
+            ),
+          ),
+          // CUSTOMIZATION PREFERENCE: Translucent dimmed backdrop overlay when SpeedDial is open
+          if (_isFabMenuOpen)
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onTap: () {
+                  setState(() {
+                    _isFabMenuOpen = false;
+                  });
+                },
+                child: Container(
+                  color: Colors.black.withOpacity(0.55),
+                ),
+              ),
+            ),
+        ],
+      ),
+      // CUSTOMIZATION PREFERENCE: Rotatable main button and paged dialog options
+      floatingActionButton: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          if (_isFabMenuOpen) ...[
+            _buildFabMenuItem(
+              icon: Icons.attach_money,
+              label: 'Log Cash Transaction',
+              onTap: () {
+                setState(() => _isFabMenuOpen = false);
+                showDialog(
+                  context: context,
+                  builder: (context) => AddTransactionDialog(
+                    dataService: Provider.of<DataService>(context, listen: false),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 12),
+            _buildFabMenuItem(
+              icon: Icons.show_chart,
+              label: 'Log Asset Transaction',
+              onTap: () {
+                setState(() => _isFabMenuOpen = false);
+                showDialog(
+                  context: context,
+                  builder: (context) => AddAssetTransactionDialog(
+                    dataService: Provider.of<DataService>(context, listen: false),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 16),
+          ],
+          FloatingActionButton(
+            backgroundColor: _isFabMenuOpen ? const Color(0xFF42445A) : AppTheme.mainAction,
+            foregroundColor: _isFabMenuOpen ? Colors.white : Colors.black,
+            shape: const CircleBorder(),
+            elevation: 8,
+            onPressed: () {
+              setState(() {
+                _isFabMenuOpen = !_isFabMenuOpen;
+              });
+            },
+            child: AnimatedRotation(
+              turns: _isFabMenuOpen ? 0.125 : 0.0,
+              duration: const Duration(milliseconds: 200),
+              child: const Icon(Icons.add, size: 28),
+            ),
+          ),
+        ],
       ),
     );
 
@@ -479,5 +552,41 @@ class _MainLayoutState extends State<MainLayout> {
     }
 
     return mainScaffold;
+  }
+
+  // CUSTOMIZATION PREFERENCE: Helper method to build premium custom SpeedDial option pills
+  Widget _buildFabMenuItem({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      mainAxisAlignment: MainAxisAlignment.end,
+      children: [
+        ElevatedButton.icon(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFFE8E9FA),
+            foregroundColor: const Color(0xFF2C2D3B),
+            elevation: 6,
+            shadowColor: Colors.black.withOpacity(0.4),
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(30),
+            ),
+          ),
+          icon: Icon(icon, size: 20, color: const Color(0xFF2C2D3B)),
+          label: Text(
+            label,
+            style: const TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 14,
+              letterSpacing: 0.2,
+            ),
+          ),
+          onPressed: onTap,
+        ),
+      ],
+    );
   }
 }

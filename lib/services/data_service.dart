@@ -27,6 +27,7 @@ class DataService extends ChangeNotifier {
   List<Asset> assets = [];
   List<BudgetTarget> budgetTargets = [];
   List<RecurringTransaction> recurringTransactions = [];
+  bool _hasHealed = false; // CUSTOMIZATION PREFERENCE: Protect from multiple runs of healing script
 
   // Live asset prices from Alpha Vantage API
   final Map<String, double> currentAssetPrices = {};
@@ -448,6 +449,7 @@ class DataService extends ChangeNotifier {
       accounts = data;
       isLoading = false;
       notifyListeners();
+      _healDatabaseRecordsOnce();
     }, onError: (err) {
       error = err.toString();
       notifyListeners();
@@ -456,6 +458,7 @@ class DataService extends ChangeNotifier {
     _firestore.streamCategories().listen((data) {
       categories = data;
       notifyListeners();
+      _healDatabaseRecordsOnce();
     });
 
     transactionFilterDate = DateTime(DateTime.now().year, DateTime.now().month, 1);
@@ -464,16 +467,19 @@ class DataService extends ChangeNotifier {
     _firestore.streamHoldings().listen((data) {
       holdings = data;
       notifyListeners();
+      _healDatabaseRecordsOnce();
     });
 
     _firestore.streamAssetTransactions().listen((data) {
       assetTransactions = data;
       notifyListeners();
+      _healDatabaseRecordsOnce();
     });
 
     _firestore.streamAssets().listen((data) {
       assets = data;
       notifyListeners();
+      _healDatabaseRecordsOnce();
     });
 
     _firestore.streamAccountSnapshots().listen((data) {
@@ -729,20 +735,129 @@ class DataService extends ChangeNotifier {
 
 
   Future<void> addAssetTransaction(AssetTransaction assetTx, {double? cashImpactAmount, String? assetType}) async {
+    AssetTransaction finalAssetTx = assetTx;
+
+    // CUSTOMIZATION PREFERENCE: Automatically record cash transaction for buys and sells if no link is provided
+    if (assetTx.transactionId == null && (assetTx.type == 'buy' || assetTx.type == 'sell')) {
+      final accountIndex = accounts.indexWhere((a) => a.id == assetTx.accountId);
+      if (accountIndex != -1) {
+        final account = accounts[accountIndex];
+        final totalValue = assetTx.quantity * assetTx.unitPrice;
+        final amount = assetTx.type == 'buy' ? -totalValue : totalValue;
+
+        Category matchedCategory = categories.firstWhere(
+          (c) => assetTx.type == 'buy' ? (c.type == 'investment' || c.type == 'expense') : c.type == 'income',
+          orElse: () => Category(
+            id: assetTx.type == 'buy' ? 'investment_default' : 'income_default',
+            name: assetTx.type == 'buy' ? 'Investment' : 'Investment Income',
+            type: assetTx.type == 'buy' ? 'investment' : 'income',
+            createdAt: DateTime.now(),
+          ),
+        );
+
+        final cashTxId = 'cash_${assetTx.id}';
+        final cashTx = Transaction(
+          id: cashTxId,
+          accountId: assetTx.accountId,
+          categoryId: matchedCategory.id,
+          amount: amount,
+          currency: account.currency,
+          date: assetTx.executedAt,
+          description: '${assetTx.type.toUpperCase()} ${assetTx.quantity} ${assetTx.assetSymbol ?? assetTx.assetId} @ ${assetTx.unitPrice}',
+          createdAt: DateTime.now(),
+        );
+
+        await addTransaction(cashTx);
+        finalAssetTx = assetTx.copyWith(transactionId: cashTxId);
+      }
+    }
+
     // Write asset transaction execution log
-    await _firestore.saveAssetTransaction(assetTx);
+    await _firestore.saveAssetTransaction(finalAssetTx);
 
     // If asset doesn't exist in our list, create it
-    final exists = assets.any((a) => a.id == assetTx.assetId);
+    final exists = assets.any((a) => a.id == finalAssetTx.assetId);
     if (!exists) {
-      final symbol = assetTx.assetSymbol ?? assetTx.assetId;
-      final name = assetTx.assetName ?? symbol;
+      final symbol = finalAssetTx.assetSymbol ?? finalAssetTx.assetId;
+      final name = finalAssetTx.assetName ?? symbol;
       final type = assetType ?? 'stock';
-      await _firestore.saveAsset(Asset(id: assetTx.assetId, symbol: symbol, name: name, type: type));
+      await _firestore.saveAsset(Asset(id: finalAssetTx.assetId, symbol: symbol, name: name, type: type));
     }
 
     // Recalculate holding inventory
-    _recalculateHolding(assetTx);
+    _recalculateHolding(finalAssetTx);
+  }
+
+  Future<void> deleteAssetTransaction(AssetTransaction assetTx) async {
+    // Write deletion to Firestore
+    await _firestore.deleteAssetTransaction(assetTx.id);
+
+    // Recalculate holdings chronologically from scratch, excluding the deleted transaction
+    await recalculateHoldingFromScratch(assetTx.accountId, assetTx.assetId, excludeTxId: assetTx.id);
+  }
+
+  Stream<List<AssetTransaction>> streamAssetTransactionsPaged({required int limit}) {
+    return _firestore.streamAssetTransactionsPaged(limit: limit);
+  }
+
+  Future<void> recalculateHoldingFromScratch(String accountId, String assetId, {String? excludeTxId}) async {
+    final txs = assetTransactions
+        .where((t) => t.accountId == accountId && t.assetId == assetId && t.id != excludeTxId)
+        .toList();
+    
+    // Replay transactions chronologically
+    txs.sort((a, b) => a.executedAt.compareTo(b.executedAt));
+
+    final existingHoldings = holdings.where((h) => h.accountId == accountId && h.assetId == assetId);
+    
+    double qty = 0;
+    double avgPrice = 0;
+
+    for (final tx in txs) {
+      if (tx.type == 'buy' || tx.type == 'dividend_reinvest' || tx.type == 'reward') {
+        final nextQty = qty + tx.quantity;
+        if (nextQty > 0) {
+          avgPrice = ((qty * avgPrice) + (tx.quantity * tx.unitPrice)) / nextQty;
+        }
+        qty = nextQty;
+      } else if (tx.type == 'sell') {
+        qty = qty - tx.quantity;
+      } else if (tx.type == 'split') {
+        qty = qty * tx.quantity;
+        if (qty > 0) {
+          avgPrice = avgPrice / tx.quantity;
+        }
+      }
+    }
+
+    if (existingHoldings.isNotEmpty) {
+      final h = existingHoldings.first;
+      if (qty <= 0) {
+        await _firestore.deleteHolding(h.id);
+      } else {
+        final updatedHolding = Holding(
+          id: h.id,
+          accountId: h.accountId,
+          assetId: h.assetId,
+          quantity: qty,
+          avgBuyPrice: avgPrice,
+          updatedAt: DateTime.now(),
+          assetSymbol: h.assetSymbol,
+          assetName: h.assetName,
+        );
+        await _firestore.saveHolding(updatedHolding);
+      }
+    } else if (qty > 0) {
+      final newHolding = Holding(
+        id: UniqueKey().toString(),
+        accountId: accountId,
+        assetId: assetId,
+        quantity: qty,
+        avgBuyPrice: avgPrice,
+        updatedAt: DateTime.now(),
+      );
+      await _firestore.saveHolding(newHolding);
+    }
   }
 
   Future<void> _recalculateHolding(AssetTransaction assetTx) async {
@@ -777,16 +892,20 @@ class DataService extends ChangeNotifier {
       }
     }
 
-    final newHolding = Holding(
-      id: id,
-      accountId: assetTx.accountId,
-      assetId: assetTx.assetId,
-      quantity: nextQty,
-      avgBuyPrice: nextAvgPrice,
-      updatedAt: DateTime.now(),
-    );
-
-    await _firestore.saveHolding(newHolding);
+    // CUSTOMIZATION PREFERENCE: Delete the holding position if its quantity falls to 0 or less
+    if (nextQty <= 0) {
+      await _firestore.deleteHolding(id);
+    } else {
+      final newHolding = Holding(
+        id: id,
+        accountId: assetTx.accountId,
+        assetId: assetTx.assetId,
+        quantity: nextQty,
+        avgBuyPrice: nextAvgPrice,
+        updatedAt: DateTime.now(),
+      );
+      await _firestore.saveHolding(newHolding);
+    }
   }
 
   Future<void> addAccountSnapshot(AccountSnapshot snapshot) async {
@@ -1099,4 +1218,70 @@ class DataService extends ChangeNotifier {
   }
 
   double get netWorth => calculateNetWorthIn(displayCurrency);
+
+  // CUSTOMIZATION PREFERENCE: Self-healing routine to fix incorrect assetId records and missing cash operations
+  Future<void> _healDatabaseRecordsOnce() async {
+    if (_hasHealed) return;
+    if (accounts.isEmpty || categories.isEmpty || assets.isEmpty || assetTransactions.isEmpty) return;
+    _hasHealed = true;
+
+    try {
+      final correctMsftAsset = assets.firstWhere(
+        (a) => a.symbol == 'MSFT' && a.id != 'MSFT',
+        orElse: () => assets.firstWhere((a) => a.symbol == 'MSFT'),
+      );
+
+      final incorrectTxs = assetTransactions.where((tx) => tx.assetId == 'MSFT').toList();
+      if (incorrectTxs.isEmpty) return;
+
+      for (final tx in incorrectTxs) {
+        // 1. Correct the asset ID in the transaction
+        final correctedTx = tx.copyWith(assetId: correctMsftAsset.id);
+        await _firestore.saveAssetTransaction(correctedTx);
+
+        // 2. Generate and link the missing cash transaction
+        if (tx.transactionId == null && (tx.type == 'buy' || tx.type == 'sell')) {
+          final account = accounts.firstWhere((a) => a.id == tx.accountId);
+          final totalValue = tx.quantity * tx.unitPrice;
+          final amount = tx.type == 'buy' ? -totalValue : totalValue;
+
+          Category matchedCategory = categories.firstWhere(
+            (c) => tx.type == 'buy' ? (c.type == 'investment' || c.type == 'expense') : c.type == 'income',
+            orElse: () => Category(
+              id: tx.type == 'buy' ? 'investment_default' : 'income_default',
+              name: tx.type == 'buy' ? 'Investment' : 'Investment Income',
+              type: tx.type == 'buy' ? 'investment' : 'income',
+              createdAt: DateTime.now(),
+            ),
+          );
+
+          final cashTxId = 'cash_' + tx.id;
+          final cashTx = Transaction(
+            id: cashTxId,
+            accountId: tx.accountId,
+            categoryId: matchedCategory.id,
+            amount: amount,
+            currency: account.currency,
+            date: tx.executedAt,
+            description: '${tx.type.toUpperCase()} ${tx.quantity} MSFT @ ${tx.unitPrice}',
+            createdAt: DateTime.now(),
+          );
+
+          await addTransaction(cashTx);
+          await _firestore.saveAssetTransaction(correctedTx.copyWith(transactionId: cashTxId));
+        }
+
+        // 3. Clear incorrect 'MSFT' key holding
+        final incorrectHoldings = holdings.where((h) => h.assetId == 'MSFT' && h.accountId == tx.accountId).toList();
+        for (final h in incorrectHoldings) {
+          await _firestore.deleteHolding(h.id);
+        }
+
+        // 4. Force chronologically accurate recalculation for correct MSFT asset ID
+        await recalculateHoldingFromScratch(tx.accountId, correctMsftAsset.id);
+      }
+    } catch (e) {
+      debugPrint('Self-healing database error: $e');
+    }
+  }
 }

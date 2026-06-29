@@ -54,4 +54,30 @@ class AssetTransaction {
       'executed_at': executedAt,
     };
   }
+
+  AssetTransaction copyWith({
+    String? id,
+    String? transactionId,
+    String? accountId,
+    String? assetId,
+    String? type,
+    double? quantity,
+    double? unitPrice,
+    DateTime? executedAt,
+    String? assetSymbol,
+    String? assetName,
+  }) {
+    return AssetTransaction(
+      id: id ?? this.id,
+      transactionId: transactionId ?? this.transactionId,
+      accountId: accountId ?? this.accountId,
+      assetId: assetId ?? this.assetId,
+      type: type ?? this.type,
+      quantity: quantity ?? this.quantity,
+      unitPrice: unitPrice ?? this.unitPrice,
+      executedAt: executedAt ?? this.executedAt,
+      assetSymbol: assetSymbol ?? this.assetSymbol,
+      assetName: assetName ?? this.assetName,
+    );
+  }
 }

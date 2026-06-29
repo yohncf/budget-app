@@ -63,66 +63,21 @@ class _LedgerPageState extends State<LedgerPage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Responsive Header
-              isMobile
-                  ? Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Transaction Ledger',
-                          style: Theme.of(context).textTheme.displayLarge?.copyWith(fontSize: 26),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Detailed historical cash movement records',
-                          style: Theme.of(context).textTheme.bodyMedium,
-                        ),
-                        const SizedBox(height: 12),
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton.icon(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppTheme.primaryPurple,
-                              foregroundColor: Colors.black,
-                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                            ),
-                            icon: const Icon(Icons.add),
-                            label: const Text('Add Transaction'),
-                            onPressed: () => _showAddTransactionDialog(context, dataService),
-                          ),
-                        ),
-                      ],
-                    )
-                  : Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Transaction Ledger',
-                              style: Theme.of(context).textTheme.displayLarge?.copyWith(fontSize: 28),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              'Detailed historical cash movement records',
-                              style: Theme.of(context).textTheme.bodyMedium,
-                            ),
-                          ],
-                        ),
-                        ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppTheme.primaryPurple,
-                            foregroundColor: Colors.black,
-                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                          ),
-                          icon: const Icon(Icons.add),
-                          label: const Text('Add Transaction'),
-                          onPressed: () => _showAddTransactionDialog(context, dataService),
-                        ),
-                      ],
-                    ),
+              // CUSTOMIZATION PREFERENCE: Removed page-specific add button. Add transactions using the global FAB menu.
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Transaction Ledger',
+                    style: Theme.of(context).textTheme.displayLarge?.copyWith(fontSize: isMobile ? 26 : 28),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Detailed historical cash movement records',
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                ],
+              ),
               const SizedBox(height: 16),
               
               // Responsive Filters

@@ -23,17 +23,6 @@ class HoldingsPage extends StatefulWidget {
 class _HoldingsPageState extends State<HoldingsPage> {
   final _uuid = const Uuid();
 
-  // Transaction form controllers
-  final _symbolController = TextEditingController();
-  final _nameController = TextEditingController();
-  final _qtyController = TextEditingController();
-  final _priceController = TextEditingController();
-  
-  Account? _selectedAccount;
-  String _selectedAssetType = 'stock'; // stock, crypto, etf
-  String _selectedTxType = 'buy'; // buy, sell, dividend_reinvest, split, reward
-  DateTime _selectedDate = DateTime.now();
-  Transaction? _selectedLinkedTx;
   int _selectedGroupIndex = -1;
 
   // Selected time period filter for Portfolio Valuation Trend chart
@@ -96,10 +85,6 @@ class _HoldingsPageState extends State<HoldingsPage> {
 
   @override
   void dispose() {
-    _symbolController.dispose();
-    _nameController.dispose();
-    _qtyController.dispose();
-    _priceController.dispose();
     super.dispose();
   }
 
@@ -223,33 +208,18 @@ class _HoldingsPageState extends State<HoldingsPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // Header
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                // CUSTOMIZATION PREFERENCE: Removed page-specific add button. Add transactions using the global FAB menu.
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Holdings & Investments',
-                          style: Theme.of(context).textTheme.displayLarge?.copyWith(fontSize: isMobile ? 24 : 28),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Track stocks, ETFs, crypto, and asset valuation logs',
-                          style: Theme.of(context).textTheme.bodyMedium,
-                        ),
-                      ],
+                    Text(
+                      'Holdings & Investments',
+                      style: Theme.of(context).textTheme.displayLarge?.copyWith(fontSize: isMobile ? 24 : 28),
                     ),
-                    ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.accentCyan,
-                        foregroundColor: Colors.black,
-                        padding: EdgeInsets.symmetric(horizontal: isMobile ? 12 : 20, vertical: isMobile ? 10 : 16),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      ),
-                      icon: const Icon(Icons.add_chart),
-                      label: Text(isMobile ? 'New' : 'New Transaction'),
-                      onPressed: () => _showAddTransactionDialog(context, dataService),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Track stocks, ETFs, crypto, and asset valuation logs',
+                      style: Theme.of(context).textTheme.bodyMedium,
                     ),
                   ],
                 ),
@@ -1259,299 +1229,5 @@ class _HoldingsPageState extends State<HoldingsPage> {
     }
 
     return Column(children: list);
-  }
-
-  void _showAddTransactionDialog(BuildContext context, DataService service) {
-    // Reset inputs
-    _symbolController.clear();
-    _nameController.clear();
-    _qtyController.clear();
-    _priceController.clear();
-    
-    // Choose initial account if available
-    final brokerages = service.accounts.where((a) => a.status == 'active' && (a.type == 'investment' || a.type == 'retirement' || a.type == 'crypto_wallet')).toList();
-    _selectedAccount = brokerages.isNotEmpty ? brokerages.first : (service.accounts.isNotEmpty ? service.accounts.first : null);
-    _selectedAssetType = 'stock';
-    _selectedTxType = 'buy';
-    _selectedDate = DateTime.now();
-    _selectedLinkedTx = null; // Reset selected linked transaction state
-
-    showDialog(
-      context: context,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            // Filter and sort active cash ledger transactions belonging to the selected account
-            final linkedTxsList = service.transactions
-                .where((t) => t.status != 'deleted' && t.accountId == _selectedAccount?.id)
-                .toList();
-            linkedTxsList.sort((a, b) => b.date.compareTo(a.date));
-            final recentTxs = linkedTxsList.take(20).toList();
-            
-            // Ensure currently selected linked transaction remains in the dropdown items list
-            if (_selectedLinkedTx != null && !recentTxs.any((t) => t.id == _selectedLinkedTx!.id)) {
-              recentTxs.add(_selectedLinkedTx!);
-            }
-
-            return AlertDialog(
-              backgroundColor: AppTheme.darkCard,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              title: Row(
-                children: [
-                  const Icon(Icons.add_chart, color: AppTheme.accentCyan),
-                  const SizedBox(width: 8),
-                  const Text('Log Asset Transaction'),
-                ],
-              ),
-              content: SizedBox(
-                width: 450,
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      // Account Selector
-                      DropdownButtonFormField<Account>(
-                        value: _selectedAccount,
-                        decoration: const InputDecoration(labelText: 'Destination Account'),
-                        items: service.accounts.where((a) => a.status == 'active').map((a) {
-                          return DropdownMenuItem<Account>(
-                            value: a,
-                            child: Text('${a.name} (${a.currency})'),
-                          );
-                        }).toList(),
-                        onChanged: (val) {
-                          setDialogState(() {
-                            _selectedAccount = val;
-                            // Reset the selected cash transaction link if the account changes
-                            _selectedLinkedTx = null;
-                          });
-                        },
-                      ),
-                      const SizedBox(height: 12),
-
-                      // Optional cash transaction linkage dropdown (representing transaction_id column)
-                      DropdownButtonFormField<Transaction?>(
-                        value: _selectedLinkedTx,
-                        decoration: const InputDecoration(
-                          labelText: 'Linked Cash Transaction (Optional)',
-                          helperText: 'Associate this asset transaction with a ledger record',
-                        ),
-                        items: [
-                          const DropdownMenuItem<Transaction?>(
-                            value: null,
-                            child: Text('None / No Link', style: TextStyle(color: AppTheme.textSecondary)),
-                          ),
-                          ...recentTxs.map((t) {
-                            final dateStr = DateFormat('yyyy-MM-dd').format(t.date);
-                            final amtStr = service.formatCurrencyWith(t.amount, t.currency);
-                            // Safe-guard description nullability and truncate if it is too long to prevent layout overflow
-                            final descriptionText = t.description ?? '';
-                            final desc = descriptionText.length > 25
-                                ? '${descriptionText.substring(0, 22)}...'
-                                : descriptionText;
-                            return DropdownMenuItem<Transaction?>(
-                              value: t,
-                              child: Text(
-                                '[$dateStr] $desc ($amtStr)',
-                                style: const TextStyle(fontSize: 13),
-                              ),
-                            );
-                          }),
-                        ],
-                        onChanged: (val) {
-                          setDialogState(() {
-                            _selectedLinkedTx = val;
-                          });
-                        },
-                      ),
-                      const SizedBox(height: 12),
-
-                      // Asset details
-                      Row(
-                        children: [
-                          Expanded(
-                            child: TextField(
-                              controller: _symbolController,
-                              textCapitalization: TextCapitalization.characters,
-                              decoration: const InputDecoration(labelText: 'Symbol', hintText: 'e.g. AAPL'),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: DropdownButtonFormField<String>(
-                              value: _selectedAssetType,
-                              decoration: const InputDecoration(labelText: 'Asset Type'),
-                              items: const [
-                                DropdownMenuItem(value: 'stock', child: Text('Stock')),
-                                DropdownMenuItem(value: 'crypto', child: Text('Crypto')),
-                                DropdownMenuItem(value: 'etf', child: Text('ETF')),
-                              ],
-                              onChanged: (val) {
-                                if (val != null) {
-                                  setDialogState(() {
-                                    _selectedAssetType = val;
-                                  });
-                                }
-                              },
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-
-                      TextField(
-                        controller: _nameController,
-                        decoration: const InputDecoration(labelText: 'Asset Name', hintText: 'e.g. Apple Inc.'),
-                      ),
-                      const SizedBox(height: 12),
-
-                      // Tx Type Dropdown
-                      DropdownButtonFormField<String>(
-                        value: _selectedTxType,
-                        decoration: const InputDecoration(labelText: 'Transaction Type'),
-                        items: const [
-                          DropdownMenuItem(value: 'buy', child: Text('Buy (Increase)')),
-                          DropdownMenuItem(value: 'sell', child: Text('Sell (Decrease)')),
-                          DropdownMenuItem(value: 'split', child: Text('Split (Multiply quantity)')),
-                          DropdownMenuItem(value: 'dividend_reinvest', child: Text('Dividend Reinvest')),
-                          DropdownMenuItem(value: 'reward', child: Text('Reward')),
-                        ],
-                        onChanged: (val) {
-                          if (val != null) {
-                            setDialogState(() {
-                              _selectedTxType = val;
-                            });
-                          }
-                        },
-                      ),
-                      const SizedBox(height: 12),
-
-                      // Qty and Price
-                      Row(
-                        children: [
-                          Expanded(
-                            child: TextField(
-                              controller: _qtyController,
-                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                              decoration: const InputDecoration(labelText: 'Quantity', hintText: 'e.g. 5.25'),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: TextField(
-                              controller: _priceController,
-                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                              decoration: InputDecoration(
-                                labelText: _selectedTxType == 'split' ? 'Split Ratio' : 'Unit Price',
-                                hintText: _selectedTxType == 'split' ? 'e.g. 2.0 (for 2-for-1)' : 'e.g. 150.25',
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-
-                      // Date picker row
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            'Executed: ${DateFormat('yyyy-MM-dd').format(_selectedDate)}',
-                            style: const TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                          TextButton(
-                            child: const Text('Change Date', style: TextStyle(color: AppTheme.accentCyan)),
-                            onPressed: () async {
-                              final picked = await showDatePicker(
-                                context: context,
-                                initialDate: _selectedDate,
-                                firstDate: DateTime(2020),
-                                lastDate: DateTime.now(),
-                              );
-                              if (picked != null) {
-                                setDialogState(() {
-                                  _selectedDate = picked;
-                                });
-                              }
-                            },
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('Cancel', style: TextStyle(color: AppTheme.textSecondary)),
-                ),
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.accentCyan,
-                    foregroundColor: Colors.black,
-                  ),
-                  onPressed: () async {
-                    if (_selectedAccount == null ||
-                        _symbolController.text.trim().isEmpty ||
-                        _qtyController.text.trim().isEmpty ||
-                        _priceController.text.trim().isEmpty) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Please fill out all required fields.')),
-                      );
-                      return;
-                    }
-
-                    final symbol = _symbolController.text.trim().toUpperCase();
-                    final name = _nameController.text.trim().isNotEmpty ? _nameController.text.trim() : symbol;
-                    final qty = double.tryParse(_qtyController.text) ?? 0.0;
-                    final price = double.tryParse(_priceController.text) ?? 0.0;
-
-                    if (qty <= 0 || price <= 0) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Quantity and unit price must be positive numbers.')),
-                      );
-                      return;
-                    }
-
-                    final assetTxId = _uuid.v4().substring(0, 20);
-                    final newAssetTx = AssetTransaction(
-                      id: assetTxId,
-                      transactionId: _selectedLinkedTx?.id, // Link to matching cash ledger transaction (representing transaction_id column)
-                      accountId: _selectedAccount!.id,
-                      assetId: symbol, // Using symbol as simple assetId
-                      type: _selectedTxType,
-                      quantity: qty,
-                      unitPrice: price,
-                      executedAt: _selectedDate,
-                      assetSymbol: symbol,
-                      assetName: name,
-                    );
-
-                    try {
-                      await service.addAssetTransaction(newAssetTx, assetType: _selectedAssetType);
-                      if (context.mounted) {
-                        Navigator.of(context).pop();
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Asset transaction logged for $symbol!')),
-                        );
-                      }
-                    } catch (e) {
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Error logging transaction: $e')),
-                        );
-                      }
-                    }
-                  },
-                  child: const Text('Submit', style: TextStyle(fontWeight: FontWeight.bold)),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
   }
 }

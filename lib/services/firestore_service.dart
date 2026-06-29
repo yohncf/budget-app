@@ -111,8 +111,30 @@ class FirestoreService {
     });
   }
 
+  Stream<List<AssetTransaction>> streamAssetTransactionsPaged({required int limit}) {
+    return _db.collection('asset_transactions')
+        .orderBy('executed_at', descending: true)
+        .limit(limit)
+        .snapshots()
+        .map((snapshot) {
+      return snapshot.docs.map((doc) {
+        final data = doc.data();
+        data['id'] = doc.id;
+        return AssetTransaction.fromJson(data);
+      }).toList();
+    });
+  }
+
   Future<void> saveAssetTransaction(AssetTransaction tx) async {
     await _db.collection('asset_transactions').doc(tx.id).set(tx.toJson());
+  }
+
+  Future<void> deleteAssetTransaction(String id) async {
+    await _db.collection('asset_transactions').doc(id).delete();
+  }
+
+  Future<void> deleteHolding(String id) async {
+    await _db.collection('holdings').doc(id).delete();
   }
 
   // --- EXCHANGE RATES ---
