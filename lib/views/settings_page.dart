@@ -662,6 +662,7 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
+  // CUSTOMIZATION PREFERENCE: Pair the Assets configuration directly with the assets database table, supporting full CRUD operations.
   Widget _buildAssetsTab(BuildContext context, DataService ds) {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24.0),
@@ -825,6 +826,7 @@ class _SettingsPageState extends State<SettingsPage> {
                           const Divider(color: Color(0xFF23232A)),
                       itemBuilder: (context, index) {
                         final asset = ds.assets[index];
+                        // CUSTOMIZATION PREFERENCE: Delete is only enabled if no active holdings have this asset (meaning quantity <= 0)
                         final canDelete = !ds.holdings
                             .any((h) => h.assetId == asset.id && h.quantity > 0);
 

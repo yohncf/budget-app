@@ -169,34 +169,6 @@ class _HoldingsPageState extends State<HoldingsPage> {
     final isMobile = MediaQuery.of(context).size.width < 600;
     final isDesktop = MediaQuery.of(context).size.width >= 900;
     
-    // Group active holdings (quantity > 0) by asset type
-    final activeHoldings = dataService.holdings.where((h) => h.quantity > 0.0).toList();
-    
-    final Map<String, List<Holding>> groupedHoldings = {
-      'stock': [],
-      'crypto': [],
-      'etf': [],
-      'cash': [],
-      'other': [],
-    };
-
-    for (var h in activeHoldings) {
-      // Look up asset in service.assets
-      final asset = dataService.assets.firstWhere(
-        (a) => a.id == h.assetId,
-        orElse: () => Asset(
-          id: h.assetId,
-          symbol: h.assetSymbol ?? h.assetId,
-          name: h.assetName ?? 'Unknown Asset',
-          type: 'stock',
-        ),
-      );
-
-      final inferredType = asset.type.toLowerCase();
-      final targetGroup = groupedHoldings.containsKey(inferredType) ? inferredType : 'other';
-      groupedHoldings[targetGroup]!.add(h);
-    }
-
     return Scaffold(
       body: Container(
         decoration: const BoxDecoration(
@@ -227,6 +199,7 @@ class _HoldingsPageState extends State<HoldingsPage> {
                 const SizedBox(height: 24),
 
                 // Graph Card, Net Worth, and Portfolio Distribution side by side on desktop, stacked on mobile
+                // CUSTOMIZATION PREFERENCE: Use IntrinsicHeight on desktop to align the Portfolio Distribution card height exactly with the Y-axis bottom of the trend graph card.
                 !isDesktop
                     ? Column(
                         children: [
@@ -251,7 +224,7 @@ class _HoldingsPageState extends State<HoldingsPage> {
                               children: [
                                 _buildNetWorthCard(context, dataService),
                                 const SizedBox(height: 24),
-                                _buildAccountGroupPieChart(context, dataService),
+                                _buildAccountGroupPieChart(context, dataService, isExpanded: true),
                               ],
                             ),
                           ),
@@ -265,7 +238,7 @@ class _HoldingsPageState extends State<HoldingsPage> {
                   style: Theme.of(context).textTheme.titleLarge?.copyWith(fontSize: 22, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 12),
-                _buildHoldingsSection(context, groupedHoldings, dataService),
+                _buildHoldingsSection(context, dataService),
               ],
             ),
           ),
@@ -320,6 +293,28 @@ class _HoldingsPageState extends State<HoldingsPage> {
         }).toList(),
       ),
     );
+  }
+
+  // CUSTOMIZATION PREFERENCE: Format vertical axis values using a clean, compact format to avoid long strings of zeros.
+  String _formatCompactValue(double value, DataService service) {
+    final absVal = value.abs();
+    String sign = value < 0 ? '-' : '';
+    String symbol = '\$';
+    if (service.displayCurrency == 'MXN') {
+      symbol = '\$';
+    } else if (service.displayCurrency == 'SOL' || service.displayCurrency == 'PEN') {
+      symbol = 'S/.';
+    } else if (service.displayCurrency == 'EUR') {
+      symbol = '€';
+    }
+    
+    if (absVal >= 1000000.0) {
+      return '$sign$symbol${(absVal / 1000000.0).toStringAsFixed(1)}M';
+    } else if (absVal >= 1000.0) {
+      return '$sign$symbol${(absVal / 1000.0).toStringAsFixed(1)}K';
+    } else {
+      return '$sign$symbol${absVal.toStringAsFixed(0)}';
+    }
   }
 
   Widget _buildValuationGraphCard(BuildContext context, DataService service) {
@@ -431,7 +426,7 @@ class _HoldingsPageState extends State<HoldingsPage> {
                         reservedSize: 55,
                         getTitlesWidget: (value, meta) {
                           return Text(
-                            service.formatCurrency(value),
+                            _formatCompactValue(value, service),
                             style: const TextStyle(color: AppTheme.textSecondary, fontSize: 9),
                           );
                         },
@@ -471,7 +466,7 @@ class _HoldingsPageState extends State<HoldingsPage> {
                   lineBarsData: [
                     LineChartBarData(
                       spots: spots,
-                      isCurved: true,
+                      isCurved: false,
                       color: AppTheme.accentCyan,
                       barWidth: 3.5,
                       isStrokeCapRound: true,
@@ -499,19 +494,7 @@ class _HoldingsPageState extends State<HoldingsPage> {
   }
 
   Widget _buildNetWorthCard(BuildContext context, DataService service) {
-    return Container(
-      width: double.infinity,
-      decoration: BoxDecoration(
-        gradient: AppTheme.primaryGradient,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: AppTheme.mainAction.withOpacity(0.2),
-            blurRadius: 15,
-            offset: const Offset(0, 8),
-          )
-        ],
-      ),
+    return Card(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 14.0),
         child: Row(
@@ -526,7 +509,7 @@ class _HoldingsPageState extends State<HoldingsPage> {
                   Text(
                     'NET WORTH',
                     style: TextStyle(
-                      color: Colors.white.withOpacity(0.7),
+                      color: AppTheme.textSecondary,
                       fontSize: 10,
                       fontWeight: FontWeight.bold,
                       letterSpacing: 1.2,
@@ -536,7 +519,7 @@ class _HoldingsPageState extends State<HoldingsPage> {
                   Text(
                     service.formatCurrencyWith(service.calculateNetWorthIn('USD'), 'USD'),
                     style: const TextStyle(
-                      color: Colors.white,
+                      color: AppTheme.mainAction,
                       fontSize: 22,
                       fontWeight: FontWeight.bold,
                     ),
@@ -545,7 +528,7 @@ class _HoldingsPageState extends State<HoldingsPage> {
                   Text(
                     '≈ ${service.formatCurrencyWith(service.calculateNetWorthIn('MXN'), 'MXN')} MXN',
                     style: TextStyle(
-                      color: Colors.white.withOpacity(0.8),
+                      color: AppTheme.mainAction.withOpacity(0.8),
                       fontSize: 11,
                       fontWeight: FontWeight.w500,
                     ),
@@ -556,18 +539,18 @@ class _HoldingsPageState extends State<HoldingsPage> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.12),
+                color: AppTheme.successGreen.withOpacity(0.15),
                 borderRadius: BorderRadius.circular(20),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.trending_up, color: Colors.white, size: 14),
-                  const SizedBox(width: 4),
+                children: const [
+                  Icon(Icons.trending_up, color: AppTheme.successGreen, size: 14),
+                  SizedBox(width: 4),
                   Text(
                     '+12.4%',
                     style: TextStyle(
-                      color: Colors.white,
+                      color: AppTheme.successGreen,
                       fontSize: 11,
                       fontWeight: FontWeight.bold,
                     ),
@@ -676,7 +659,7 @@ class _HoldingsPageState extends State<HoldingsPage> {
     return groupTotals;
   }
 
-  Widget _buildAccountGroupPieChart(BuildContext context, DataService service) {
+  Widget _buildAccountGroupPieChart(BuildContext context, DataService service, {bool isExpanded = false}) {
     final distribution = _calculateAccountGroupDistribution(service);
     if (distribution.isEmpty) {
       return const SizedBox.shrink();
@@ -719,9 +702,175 @@ class _HoldingsPageState extends State<HoldingsPage> {
       );
     }
 
+    final chartWidget = LayoutBuilder(
+      builder: (context, constraints) {
+        final isNarrow = constraints.maxWidth < 280;
+        
+        final chartSize = isExpanded ? 180.0 : 140.0;
+        final centerRadius = isExpanded ? 58.0 : 45.0;
+        final textFontSize = isExpanded ? 15.0 : 14.0;
+        
+        final donutChart = Stack(
+          alignment: Alignment.center,
+          children: [
+            SizedBox(
+              height: chartSize,
+              width: chartSize,
+              child: PieChart(
+                PieChartData(
+                  sections: chartSections,
+                  sectionsSpace: 2,
+                  centerSpaceRadius: centerRadius,
+                  pieTouchData: PieTouchData(
+                    touchCallback: (FlTouchEvent event, pieTouchResponse) {
+                      if (event is FlTapDownEvent || event is FlTapUpEvent) {
+                        if (pieTouchResponse != null &&
+                            pieTouchResponse.touchedSection != null) {
+                          final touchedIndex = pieTouchResponse.touchedSection!.touchedSectionIndex;
+                          setState(() {
+                            if (touchedIndex >= 0 && touchedIndex < sortedEntries.length) {
+                              _selectedGroupIndex = _selectedGroupIndex == touchedIndex ? -1 : touchedIndex;
+                            } else {
+                              _selectedGroupIndex = -1;
+                            }
+                          });
+                        }
+                      }
+                    },
+                  ),
+                ),
+              ),
+            ),
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  service.formatCurrency(totalValue),
+                  style: TextStyle(
+                    fontSize: textFontSize,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                const Text(
+                  'Total Portfolio',
+                  style: TextStyle(
+                    fontSize: 9,
+                    color: AppTheme.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        );
+
+        final legendList = Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: List.generate(sortedEntries.length, (index) {
+            final entry = sortedEntries[index];
+            final groupName = entry.key;
+            final sum = entry.value;
+            final percent = totalValue > 0 ? (sum / totalValue) * 100 : 0.0;
+            final color = groupColors[index % groupColors.length];
+            final isSelected = index == _selectedGroupIndex;
+
+            return GestureDetector(
+              onTap: () {
+                setState(() {
+                  _selectedGroupIndex = _selectedGroupIndex == index ? -1 : index;
+                });
+              },
+              child: MouseRegion(
+                cursor: SystemMouseCursors.click,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                  margin: const EdgeInsets.only(bottom: 6),
+                  decoration: BoxDecoration(
+                    color: isSelected ? color.withOpacity(0.12) : Colors.transparent,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: isSelected ? color.withOpacity(0.3) : Colors.transparent,
+                      width: 1,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          color: color,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          groupName,
+                          style: TextStyle(
+                            color: isSelected ? Colors.white : AppTheme.textSecondary,
+                            fontSize: 12,
+                            fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(
+                            service.formatCurrency(sum),
+                            style: TextStyle(
+                              color: isSelected ? Colors.white : Colors.white70,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          Text(
+                            '${percent.toStringAsFixed(1)}%',
+                            style: const TextStyle(
+                              color: AppTheme.textSecondary,
+                              fontSize: 10,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          }),
+        );
+
+        if (isNarrow) {
+          return Column(
+            children: [
+              Center(child: donutChart),
+              const SizedBox(height: 16),
+              legendList,
+            ],
+          );
+        }
+
+        return Row(
+          children: [
+            donutChart,
+            const SizedBox(width: 16),
+            Expanded(child: legendList),
+          ],
+        );
+      },
+    );
+
     return Card(
       elevation: 6,
-      child: Padding(
+      child: Container(
+        height: isExpanded ? 348 : null,
         padding: const EdgeInsets.all(20.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -736,388 +885,95 @@ class _HoldingsPageState extends State<HoldingsPage> {
               style: Theme.of(context).textTheme.bodyMedium,
             ),
             const SizedBox(height: 20),
-            LayoutBuilder(
-              builder: (context, constraints) {
-                final isNarrow = constraints.maxWidth < 280;
-                
-                final donutChart = Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    SizedBox(
-                      height: 140,
-                      width: 140,
-                      child: PieChart(
-                        PieChartData(
-                          sections: chartSections,
-                          sectionsSpace: 2,
-                          centerSpaceRadius: 45,
-                          pieTouchData: PieTouchData(
-                            touchCallback: (FlTouchEvent event, pieTouchResponse) {
-                              if (event is FlTapDownEvent || event is FlTapUpEvent) {
-                                if (pieTouchResponse != null &&
-                                    pieTouchResponse.touchedSection != null) {
-                                  final touchedIndex = pieTouchResponse.touchedSection!.touchedSectionIndex;
-                                  setState(() {
-                                    if (touchedIndex >= 0 && touchedIndex < sortedEntries.length) {
-                                      _selectedGroupIndex = _selectedGroupIndex == touchedIndex ? -1 : touchedIndex;
-                                    } else {
-                                      _selectedGroupIndex = -1;
-                                    }
-                                  });
-                                }
-                              }
-                            },
-                          ),
-                        ),
-                      ),
-                    ),
-                    Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          service.formatCurrency(totalValue),
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        const Text(
-                          'Total Portfolio',
-                          style: TextStyle(
-                            fontSize: 9,
-                            color: AppTheme.textSecondary,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                );
-
-                final legendList = Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: List.generate(sortedEntries.length, (index) {
-                    final entry = sortedEntries[index];
-                    final groupName = entry.key;
-                    final sum = entry.value;
-                    final percent = totalValue > 0 ? (sum / totalValue) * 100 : 0.0;
-                    final color = groupColors[index % groupColors.length];
-                    final isSelected = index == _selectedGroupIndex;
-
-                    return GestureDetector(
-                      onTap: () {
-                        setState(() {
-                          _selectedGroupIndex = _selectedGroupIndex == index ? -1 : index;
-                        });
-                      },
-                      child: MouseRegion(
-                        cursor: SystemMouseCursors.click,
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 200),
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                          margin: const EdgeInsets.only(bottom: 6),
-                          decoration: BoxDecoration(
-                            color: isSelected ? color.withOpacity(0.12) : Colors.transparent,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                              color: isSelected ? color.withOpacity(0.3) : Colors.transparent,
-                              width: 1,
-                            ),
-                          ),
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 8,
-                                height: 8,
-                                decoration: BoxDecoration(
-                                  color: color,
-                                  shape: BoxShape.circle,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  groupName,
-                                  style: TextStyle(
-                                    color: isSelected ? Colors.white : AppTheme.textSecondary,
-                                    fontSize: 12,
-                                    fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.end,
-                                children: [
-                                  Text(
-                                    service.formatCurrency(sum),
-                                    style: TextStyle(
-                                      color: isSelected ? Colors.white : Colors.white70,
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                  Text(
-                                    '${percent.toStringAsFixed(1)}%',
-                                    style: const TextStyle(
-                                      color: AppTheme.textSecondary,
-                                      fontSize: 10,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    );
-                  }),
-                );
-
-                if (isNarrow) {
-                  return Column(
-                    children: [
-                      Center(child: donutChart),
-                      const SizedBox(height: 16),
-                      legendList,
-                    ],
-                  );
-                }
-
-                return Row(
-                  children: [
-                    donutChart,
-                    const SizedBox(width: 16),
-                    Expanded(child: legendList),
-                  ],
-                );
-              },
-            ),
+            isExpanded ? Expanded(child: chartWidget) : chartWidget,
           ],
         ),
       ),
     );
   }
 
-  Widget _buildHoldingsSection(BuildContext context, Map<String, List<Holding>> groups, DataService service) {
+  // CUSTOMIZATION PREFERENCE: List Capital and Retirement accounts directly, sorted by total value descending.
+  // Retirement accounts manually sum their holdings and cash balance, whereas Capital accounts track cash directly as a CASH holding asset.
+  Widget _buildHoldingsSection(BuildContext context, DataService service) {
     final list = <Widget>[];
 
-    groups.forEach((type, holdings) {
-      if (holdings.isEmpty) return;
+    // Filter accounts: active and either capital or retirement
+    final List<Account> targetAccounts = service.accounts
+        .where((a) => a.status == 'active' && (a.accountGroup == 'capital' || a.accountGroup == 'retirement'))
+        .toList();
 
-      final label = type == 'stock' 
-          ? 'Stocks' 
-          : type == 'crypto' 
-              ? 'Crypto' 
-              : type == 'etf' 
-                  ? 'ETFs' 
-                  : type == 'cash'
-                      ? 'Cash'
-                      : 'Other Assets';
+    // Map to store precomputed total values for sorting
+    final Map<String, double> accountValues = {};
 
-      final Color typeColor = type == 'crypto' 
-          ? const Color(0xFFF59E0B) 
-          : type == 'etf' 
-              ? AppTheme.mainAction 
-              : type == 'cash'
-                  ? const Color(0xFFA78BFA)
-                  : AppTheme.accentCyan;
-
-      // Calculate category sum using current value
-      double categoryTotal = 0.0;
-      for (var h in holdings) {
-        final acc = service.accounts.firstWhere((a) => a.id == h.accountId, orElse: () => Account(id: '', name: '', type: 'checking', currency: 'USD', createdAt: DateTime.now(), updatedAt: DateTime.now()));
-        final currentPrice = service.getHoldingCurrentPrice(h, acc);
-        final holdingValInDisplay = service.convertToDisplay(h.quantity * currentPrice, acc.currency);
-        categoryTotal += holdingValInDisplay;
-      }
-
-      list.add(
-        Card(
-          margin: const EdgeInsets.only(bottom: 16),
-          child: ExpansionTile(
-            initiallyExpanded: true,
-            title: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      width: 10,
-                      height: 10,
-                      decoration: BoxDecoration(color: typeColor, shape: BoxShape.circle),
-                    ),
-                    const SizedBox(width: 10),
-                    Text(
-                      label,
-                      style: Theme.of(context).textTheme.titleLarge?.copyWith(fontSize: 16, fontWeight: FontWeight.bold),
-                    ),
-                  ],
-                ),
-                Text(
-                  service.formatCurrency(categoryTotal),
-                  style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 16, color: typeColor),
-                ),
-              ],
-            ),
-             childrenPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            children: holdings.map((h) {
-              final acc = service.accounts.firstWhere((a) => a.id == h.accountId, orElse: () => Account(id: '', name: '', type: 'checking', currency: 'USD', createdAt: DateTime.now(), updatedAt: DateTime.now()));
-              final currentPrice = service.getHoldingCurrentPrice(h, acc);
-              final displayPrice = service.convertToDisplay(h.avgBuyPrice, acc.currency);
-              final displayCurrentPrice = service.convertToDisplay(currentPrice, acc.currency);
-              final holdingValInDisplay = service.convertToDisplay(h.quantity * currentPrice, acc.currency);
-
-              final totalCost = h.quantity * h.avgBuyPrice;
-              final currentValue = h.quantity * currentPrice;
-              final gainLoss = currentValue - totalCost;
-              final displayGainLoss = service.convertToDisplay(gainLoss, acc.currency);
-              final roiPct = totalCost > 0 ? (gainLoss / totalCost) * 100 : 0.0;
-
-              final asset = service.assets.firstWhere(
-                (a) => a.id == h.assetId,
-                orElse: () => Asset(
-                  id: h.assetId,
-                  symbol: h.assetSymbol ?? h.assetId,
-                  name: h.assetName ?? 'Unknown Asset',
-                  type: 'stock',
-                ),
-              );
-
-              return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8.0),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          '${asset.name} (${asset.symbol})',
-                          style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Qty: ${h.quantity.toStringAsFixed(4)}  •  Avg: ${service.formatCurrency(displayPrice)}  •  Cur: ${service.formatCurrency(displayCurrentPrice)}',
-                          style: Theme.of(context).textTheme.bodyMedium,
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          'Held in: ${acc.name}',
-                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 10, color: AppTheme.textSecondary),
-                        ),
-                      ],
-                    ),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        Text(
-                          service.formatCurrency(holdingValInDisplay),
-                          style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 16),
-                        ),
-                        const SizedBox(height: 4),
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              displayGainLoss >= 0 ? Icons.arrow_drop_up : Icons.arrow_drop_down,
-                              color: displayGainLoss >= 0 ? AppTheme.successGreen : AppTheme.dangerRed,
-                              size: 16,
-                            ),
-                            Text(
-                              '${displayGainLoss >= 0 ? '+' : ''}${service.formatCurrency(displayGainLoss)} (${roiPct.toStringAsFixed(2)}%)',
-                              style: TextStyle(
-                                color: displayGainLoss >= 0 ? AppTheme.successGreen : AppTheme.dangerRed,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              );
-            }).toList(),
-          ),
-        ),
-      );
-    });
-
-    // Query active accounts to add PPR, Savings Fund, and Afore to the bottom of the asset allocation
-    final List<String> targetNames = ['ppr', 'savings fund', 'afore', 'fondo de ahorro'];
-    final List<Account> matchedAccounts = [];
-    
-    for (var acc in service.accounts) {
-      if (acc.status != 'active') continue;
-      final nameLower = acc.name.toLowerCase();
-      if (targetNames.any((target) => nameLower.contains(target))) {
-        matchedAccounts.add(acc);
-      }
+    for (var account in targetAccounts) {
+      final accountHoldings = service.holdings.where((h) => h.accountId == account.id && h.quantity > 0.0).toList();
+      double holdingsVal = accountHoldings.fold(0.0, (sum, item) {
+        final currentPrice = service.getHoldingCurrentPrice(item, account);
+        return sum + service.convertToDisplay(item.quantity * currentPrice, account.currency);
+      });
+      double totalVal = account.accountGroup == 'capital'
+          ? holdingsVal
+          : service.convertToDisplay(account.currentBalance, account.currency) + holdingsVal;
+      accountValues[account.id] = totalVal;
     }
 
-    // Sort priority: PPR -> Savings Fund -> Afore
-    matchedAccounts.sort((a, b) {
-      int getPriority(String name) {
-        final n = name.toLowerCase();
-        if (n.contains('ppr')) return 1;
-        if (n.contains('savings fund') || n.contains('fondo de ahorro')) return 2;
-        if (n.contains('afore')) return 3;
-        return 4;
-      }
-      return getPriority(a.name).compareTo(getPriority(b.name));
+    // Sort accounts by total value descending
+    targetAccounts.sort((a, b) {
+      final valA = accountValues[a.id] ?? 0.0;
+      final valB = accountValues[b.id] ?? 0.0;
+      return valB.compareTo(valA);
     });
 
-    for (var account in matchedAccounts) {
+    for (var account in targetAccounts) {
+      final totalDisplayVal = accountValues[account.id] ?? 0.0;
       final accountHoldings = service.holdings.where((h) => h.accountId == account.id && h.quantity > 0.0).toList();
-      double holdingsVal = accountHoldings.fold(0.0, (sum, item) => sum + service.convertToDisplay(item.quantity * service.getHoldingCurrentPrice(item, account), account.currency));
-      double totalDisplayVal = service.convertToDisplay(account.currentBalance, account.currency) + holdingsVal;
 
-      final nameLower = account.name.toLowerCase();
-      Color accountColor = AppTheme.mainAction;
-      if (nameLower.contains('ppr')) {
-        accountColor = const Color(0xFF8B5CF6); // Purple
-      } else if (nameLower.contains('savings fund') || nameLower.contains('fondo de ahorro')) {
-        accountColor = AppTheme.successGreen; // Green
-      } else if (nameLower.contains('afore')) {
-        accountColor = const Color(0xFFF59E0B); // Orange
-      }
+      final isCapital = account.accountGroup == 'capital';
+      final groupColor = isCapital ? AppTheme.accentCyan : const Color(0xFF8B5CF6); // Cyan for Capital, Purple for Retirement
+      final groupIcon = isCapital ? Icons.account_balance_wallet_outlined : Icons.savings_outlined;
+      final groupLabel = isCapital ? 'Capital' : 'Retirement';
 
       list.add(
         Card(
+          clipBehavior: Clip.antiAlias,
           margin: const EdgeInsets.only(bottom: 16),
           child: ExpansionTile(
+            shape: const Border(),
+            collapsedShape: const Border(),
             initiallyExpanded: false,
-            title: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      width: 10,
-                      height: 10,
-                      decoration: BoxDecoration(color: accountColor, shape: BoxShape.circle),
-                    ),
-                    const SizedBox(width: 10),
-                    Text(
-                      account.name,
-                      style: Theme.of(context).textTheme.titleLarge?.copyWith(fontSize: 16, fontWeight: FontWeight.bold),
-                    ),
-                  ],
-                ),
-                Text(
-                  service.formatCurrency(totalDisplayVal),
-                  style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 16, color: accountColor),
-                ),
-              ],
+            leading: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: groupColor.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(groupIcon, color: groupColor, size: 20),
+            ),
+            title: Text(
+              account.name,
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+            ),
+            subtitle: Text(
+              '$groupLabel • ${account.currency.toUpperCase()}',
+              style: const TextStyle(
+                color: AppTheme.textSecondary,
+                fontSize: 11,
+              ),
+            ),
+            trailing: Text(
+              service.formatCurrency(totalDisplayVal),
+              style: GoogleFonts.outfit(
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+                color: groupColor,
+              ),
             ),
             childrenPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             children: [
-              if (account.currentBalance != 0.0)
+              // Show cash row for non-capital accounts (retirement accounts etc) if they have cash balance
+              if (!isCapital && account.currentBalance != 0.0)
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 8.0),
                   child: Row(
@@ -1128,7 +984,10 @@ class _HoldingsPageState extends State<HoldingsPage> {
                         children: [
                           Text(
                             'Cash Balance',
-                            style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold, color: AppTheme.textSecondary),
+                            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                  color: AppTheme.textSecondary,
+                                ),
                           ),
                           const SizedBox(height: 4),
                           Text(
@@ -1139,11 +998,16 @@ class _HoldingsPageState extends State<HoldingsPage> {
                       ),
                       Text(
                         service.formatAndConvert(account.currentBalance, account.currency),
-                        style: GoogleFonts.outfit(fontSize: 15, fontWeight: FontWeight.w600, color: AppTheme.textSecondary),
+                        style: GoogleFonts.outfit(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                          color: AppTheme.textSecondary,
+                        ),
                       ),
                     ],
                   ),
                 ),
+              // Map holdings/assets
               ...accountHoldings.map((h) {
                 final currentPrice = service.getHoldingCurrentPrice(h, account);
                 final displayPrice = service.convertToDisplay(h.avgBuyPrice, account.currency);
@@ -1155,7 +1019,7 @@ class _HoldingsPageState extends State<HoldingsPage> {
                 final gainLoss = currentValue - totalCost;
                 final displayGainLoss = service.convertToDisplay(gainLoss, account.currency);
                 final roiPct = totalCost > 0 ? (gainLoss / totalCost) * 100 : 0.0;
-                
+
                 final asset = service.assets.firstWhere(
                   (a) => a.id == h.assetId,
                   orElse: () => Asset(
@@ -1171,26 +1035,35 @@ class _HoldingsPageState extends State<HoldingsPage> {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            '${asset.name} (${asset.symbol})',
-                            style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Qty: ${h.quantity.toStringAsFixed(4)}  •  Avg: ${service.formatCurrency(displayPrice)}  •  Cur: ${service.formatCurrency(displayCurrentPrice)}',
-                            style: Theme.of(context).textTheme.bodyMedium,
-                          ),
-                        ],
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '${asset.name} (${asset.symbol})',
+                              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Qty: ${h.quantity.toStringAsFixed(4)}  •  Avg: ${service.formatCurrency(displayPrice)}  •  Cur: ${service.formatCurrency(displayCurrentPrice)}',
+                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                    fontSize: 12,
+                                  ),
+                            ),
+                          ],
+                        ),
                       ),
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
                           Text(
                             service.formatCurrency(holdingValInDisplay),
-                            style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 16),
+                            style: GoogleFonts.outfit(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
                           ),
                           const SizedBox(height: 4),
                           Row(
@@ -1217,11 +1090,17 @@ class _HoldingsPageState extends State<HoldingsPage> {
                   ),
                 );
               }),
-              if (account.currentBalance == 0.0 && accountHoldings.isEmpty)
+              if ((isCapital || account.currentBalance == 0.0) && accountHoldings.isEmpty)
                 const Padding(
                   padding: EdgeInsets.symmetric(vertical: 8.0),
                   child: Center(
-                    child: Text('No cash balance or holdings recorded.', style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
+                    child: Text(
+                      'No assets or balance recorded.',
+                      style: TextStyle(
+                        color: AppTheme.textSecondary,
+                        fontSize: 12,
+                      ),
+                    ),
                   ),
                 ),
             ],
@@ -1234,7 +1113,10 @@ class _HoldingsPageState extends State<HoldingsPage> {
       return const Center(
         child: Padding(
           padding: EdgeInsets.symmetric(vertical: 40.0),
-          child: Text('No active investment holdings in portfolio.', style: TextStyle(color: AppTheme.textSecondary)),
+          child: Text(
+            'No active capital or retirement accounts found.',
+            style: TextStyle(color: AppTheme.textSecondary),
+          ),
         ),
       );
     }
