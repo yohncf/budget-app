@@ -27,7 +27,7 @@ class DataService extends ChangeNotifier {
   List<Asset> assets = [];
   List<BudgetTarget> budgetTargets = [];
   List<RecurringTransaction> recurringTransactions = [];
-  bool _hasHealed = false; // CUSTOMIZATION PREFERENCE: Protect from multiple runs of healing script
+  bool _hasHealedV2 = false; // CUSTOMIZATION PREFERENCE: Protect from multiple runs of healing script
 
   // Live asset prices from Alpha Vantage API
   final Map<String, double> currentAssetPrices = {};
@@ -58,6 +58,7 @@ class DataService extends ChangeNotifier {
     _transactionsSubscription = _firestore.streamTransactions(startFrom: transactionFilterDate).listen((data) {
       transactions = data;
       notifyListeners();
+      _healDatabaseRecordsOnce();
     });
   }
 
@@ -745,15 +746,31 @@ class DataService extends ChangeNotifier {
         final totalValue = assetTx.quantity * assetTx.unitPrice;
         final amount = assetTx.type == 'buy' ? -totalValue : totalValue;
 
-        Category matchedCategory = categories.firstWhere(
-          (c) => assetTx.type == 'buy' ? (c.type == 'investment' || c.type == 'expense') : c.type == 'income',
-          orElse: () => Category(
-            id: assetTx.type == 'buy' ? 'investment_default' : 'income_default',
-            name: assetTx.type == 'buy' ? 'Investment' : 'Investment Income',
-            type: assetTx.type == 'buy' ? 'investment' : 'income',
-            createdAt: DateTime.now(),
-          ),
-        );
+        Category matchedCategory;
+        if (assetTx.type == 'buy') {
+          matchedCategory = categories.firstWhere(
+            (c) => c.type == 'investment' || c.type == 'expense',
+            orElse: () => Category(
+              id: 'investment_default',
+              name: 'Investment',
+              type: 'investment',
+              createdAt: DateTime.now(),
+            ),
+          );
+        } else {
+          matchedCategory = categories.firstWhere(
+            (c) => c.type == 'income' && c.name.toLowerCase().contains('deposit'),
+            orElse: () => categories.firstWhere(
+              (c) => c.type == 'income',
+              orElse: () => Category(
+                id: 'deposit_default',
+                name: 'Deposit',
+                type: 'income',
+                createdAt: DateTime.now(),
+              ),
+            ),
+          );
+        }
 
         final cashTxId = 'cash_${assetTx.id}';
         final cashTx = Transaction(
@@ -1221,9 +1238,9 @@ class DataService extends ChangeNotifier {
 
   // CUSTOMIZATION PREFERENCE: Self-healing routine to fix incorrect assetId records and missing cash operations
   Future<void> _healDatabaseRecordsOnce() async {
-    if (_hasHealed) return;
-    if (accounts.isEmpty || categories.isEmpty || assets.isEmpty || assetTransactions.isEmpty) return;
-    _hasHealed = true;
+    if (_hasHealedV2) return;
+    if (accounts.isEmpty || categories.isEmpty || assets.isEmpty || assetTransactions.isEmpty || transactions.isEmpty) return;
+    _hasHealedV2 = true;
 
     try {
       final correctMsftAsset = assets.firstWhere(
@@ -1232,53 +1249,103 @@ class DataService extends ChangeNotifier {
       );
 
       final incorrectTxs = assetTransactions.where((tx) => tx.assetId == 'MSFT').toList();
-      if (incorrectTxs.isEmpty) return;
+      
+      // Perform MSFT asset ID fix if found
+      if (incorrectTxs.isNotEmpty) {
+        for (final tx in incorrectTxs) {
+          // 1. Correct the asset ID in the transaction
+          final correctedTx = tx.copyWith(assetId: correctMsftAsset.id);
+          await _firestore.saveAssetTransaction(correctedTx);
 
-      for (final tx in incorrectTxs) {
-        // 1. Correct the asset ID in the transaction
-        final correctedTx = tx.copyWith(assetId: correctMsftAsset.id);
-        await _firestore.saveAssetTransaction(correctedTx);
+          // 2. Generate and link the missing cash transaction
+          if (tx.transactionId == null && (tx.type == 'buy' || tx.type == 'sell')) {
+            final account = accounts.firstWhere((a) => a.id == tx.accountId);
+            final totalValue = tx.quantity * tx.unitPrice;
+            final amount = tx.type == 'buy' ? -totalValue : totalValue;
 
-        // 2. Generate and link the missing cash transaction
-        if (tx.transactionId == null && (tx.type == 'buy' || tx.type == 'sell')) {
-          final account = accounts.firstWhere((a) => a.id == tx.accountId);
-          final totalValue = tx.quantity * tx.unitPrice;
-          final amount = tx.type == 'buy' ? -totalValue : totalValue;
+            Category matchedCategory;
+            if (tx.type == 'buy') {
+              matchedCategory = categories.firstWhere(
+                (c) => c.type == 'investment' || c.type == 'expense',
+                orElse: () => Category(
+                  id: 'investment_default',
+                  name: 'Investment',
+                  type: 'investment',
+                  createdAt: DateTime.now(),
+                ),
+              );
+            } else {
+              matchedCategory = categories.firstWhere(
+                (c) => c.type == 'income' && c.name.toLowerCase().contains('deposit'),
+                orElse: () => categories.firstWhere(
+                  (c) => c.type == 'income',
+                  orElse: () => Category(
+                    id: 'deposit_default',
+                    name: 'Deposit',
+                    type: 'income',
+                    createdAt: DateTime.now(),
+                  ),
+                ),
+              );
+            }
 
-          Category matchedCategory = categories.firstWhere(
-            (c) => tx.type == 'buy' ? (c.type == 'investment' || c.type == 'expense') : c.type == 'income',
-            orElse: () => Category(
-              id: tx.type == 'buy' ? 'investment_default' : 'income_default',
-              name: tx.type == 'buy' ? 'Investment' : 'Investment Income',
-              type: tx.type == 'buy' ? 'investment' : 'income',
+            final cashTxId = 'cash_' + tx.id;
+            final cashTx = Transaction(
+              id: cashTxId,
+              accountId: tx.accountId,
+              categoryId: matchedCategory.id,
+              amount: amount,
+              currency: account.currency,
+              date: tx.executedAt,
+              description: '${tx.type.toUpperCase()} ${tx.quantity} MSFT @ ${tx.unitPrice}',
               createdAt: DateTime.now(),
-            ),
-          );
+            );
 
-          final cashTxId = 'cash_' + tx.id;
-          final cashTx = Transaction(
-            id: cashTxId,
-            accountId: tx.accountId,
-            categoryId: matchedCategory.id,
-            amount: amount,
-            currency: account.currency,
-            date: tx.executedAt,
-            description: '${tx.type.toUpperCase()} ${tx.quantity} MSFT @ ${tx.unitPrice}',
+            await addTransaction(cashTx);
+            await _firestore.saveAssetTransaction(correctedTx.copyWith(transactionId: cashTxId));
+          }
+
+          // 3. Clear incorrect 'MSFT' key holding
+          final incorrectHoldings = holdings.where((h) => h.assetId == 'MSFT' && h.accountId == tx.accountId).toList();
+          for (final h in incorrectHoldings) {
+            await _firestore.deleteHolding(h.id);
+          }
+
+          // 4. Force chronologically accurate recalculation for correct MSFT asset ID
+          await recalculateHoldingFromScratch(tx.accountId, correctMsftAsset.id);
+        }
+      }
+
+      // CUSTOMIZATION PREFERENCE: Ensure any cash transaction linked to a stock/asset sale uses the correct 'Deposit' category
+      // instead of 'Salary' or general 'Income'
+      final depositCategory = categories.firstWhere(
+        (c) => c.type == 'income' && c.name.toLowerCase().contains('deposit'),
+        orElse: () => categories.firstWhere(
+          (c) => c.type == 'income',
+          orElse: () => Category(
+            id: 'deposit_default',
+            name: 'Deposit',
+            type: 'income',
             createdAt: DateTime.now(),
-          );
+          ),
+        ),
+      );
 
-          await addTransaction(cashTx);
-          await _firestore.saveAssetTransaction(correctedTx.copyWith(transactionId: cashTxId));
+      final sales = assetTransactions.where((at) => at.type == 'sell' && at.transactionId != null).toList();
+      for (final sale in sales) {
+        final matchingCashTxIndex = transactions.indexWhere((t) => t.id == sale.transactionId);
+        Transaction? cashTx;
+        if (matchingCashTxIndex != -1) {
+          cashTx = transactions[matchingCashTxIndex];
+        } else {
+          cashTx = await _firestore.getTransaction(sale.transactionId!);
         }
 
-        // 3. Clear incorrect 'MSFT' key holding
-        final incorrectHoldings = holdings.where((h) => h.assetId == 'MSFT' && h.accountId == tx.accountId).toList();
-        for (final h in incorrectHoldings) {
-          await _firestore.deleteHolding(h.id);
+        if (cashTx != null && cashTx.categoryId != depositCategory.id) {
+          final correctedCashTx = cashTx.copyWith(categoryId: depositCategory.id);
+          await _firestore.saveTransaction(correctedCashTx);
+          debugPrint('Healed cash transaction ${cashTx.id} category from ${cashTx.categoryId} to ${depositCategory.id}');
         }
-
-        // 4. Force chronologically accurate recalculation for correct MSFT asset ID
-        await recalculateHoldingFromScratch(tx.accountId, correctMsftAsset.id);
       }
     } catch (e) {
       debugPrint('Self-healing database error: $e');

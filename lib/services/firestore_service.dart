@@ -66,6 +66,14 @@ class FirestoreService {
     await _db.collection('transactions').doc(tx.id).set(tx.toJson());
   }
 
+  Future<Transaction?> getTransaction(String txId) async {
+    final doc = await _db.collection('transactions').doc(txId).get();
+    if (!doc.exists || doc.data() == null) return null;
+    final data = doc.data()!;
+    data['id'] = doc.id;
+    return Transaction.fromJson(data);
+  }
+
   Future<void> deleteTransaction(String txId) async {
     await _db.collection('transactions').doc(txId).delete();
   }
