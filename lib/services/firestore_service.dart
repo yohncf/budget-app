@@ -108,6 +108,10 @@ class FirestoreService {
     await _db.collection('assets').doc(asset.id).set(asset.toJson());
   }
 
+  Future<void> deleteAsset(String assetId) async {
+    await _db.collection('assets').doc(assetId).delete();
+  }
+
   // --- ASSET TRANSACTIONS ---
   Stream<List<AssetTransaction>> streamAssetTransactions() {
     return _db.collection('asset_transactions').orderBy('executed_at', descending: true).snapshots().map((snapshot) {

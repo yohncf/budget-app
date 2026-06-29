@@ -6,6 +6,7 @@ import '../services/data_service.dart';
 import '../models/recurring_transaction.dart';
 import '../models/account.dart';
 import '../models/category.dart';
+import '../models/asset.dart';
 import '../core/theme.dart';
 
 class SettingsPage extends StatefulWidget {
@@ -34,6 +35,12 @@ class _SettingsPageState extends State<SettingsPage> {
   DateTime _startDate = DateTime.now();
   DateTime _nextDueDate = DateTime.now();
   DateTime? _endDate;
+
+  // Form State (for Assets)
+  final _assetFormKey = GlobalKey<FormState>();
+  final _assetSymbolController = TextEditingController();
+  final _assetNameController = TextEditingController();
+  String _selectedAssetType = 'stock';
 
   static const Map<String, String> _worldCurrencies = {
     'MXN': 'Mexican Peso',
@@ -69,6 +76,8 @@ class _SettingsPageState extends State<SettingsPage> {
     _descController.dispose();
     _amountController.dispose();
     _intervalController.dispose();
+    _assetSymbolController.dispose();
+    _assetNameController.dispose();
     super.dispose();
   }
 
@@ -95,7 +104,7 @@ class _SettingsPageState extends State<SettingsPage> {
     }
 
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('App Settings & Configurations'),
@@ -108,6 +117,7 @@ class _SettingsPageState extends State<SettingsPage> {
             tabs: [
               Tab(icon: Icon(Icons.currency_exchange), text: 'Currencies'),
               Tab(icon: Icon(Icons.autorenew), text: 'Recurring Transactions'),
+              Tab(icon: Icon(Icons.wallet), text: 'Assets'),
             ],
           ),
         ),
@@ -120,6 +130,7 @@ class _SettingsPageState extends State<SettingsPage> {
               children: [
                 _buildCurrenciesTab(context, ds),
                 _buildRecurringTxTab(context, ds),
+                _buildAssetsTab(context, ds),
               ],
             ),
           ),
@@ -648,6 +659,400 @@ class _SettingsPageState extends State<SettingsPage> {
           );
         },
       ),
+    );
+  }
+
+  Widget _buildAssetsTab(BuildContext context, DataService ds) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24.0),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isWide = constraints.maxWidth >= 900;
+
+          final formWidget = Card(
+            child: Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: Form(
+                key: _assetFormKey,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Add New Asset',
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: AppTheme.accentCyan,
+                          ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Symbol
+                    TextFormField(
+                      controller: _assetSymbolController,
+                      textCapitalization: TextCapitalization.characters,
+                      decoration: const InputDecoration(
+                        labelText: 'Asset Symbol',
+                        hintText: 'e.g. AAPL, BTC, MSFT',
+                        prefixIcon: Icon(Icons.token_outlined),
+                      ),
+                      validator: (val) {
+                        if (val == null || val.trim().isEmpty) {
+                          return 'Enter an asset symbol';
+                        }
+                        final trimmed = val.trim().toUpperCase();
+                        if (ds.assets.any((a) => a.symbol == trimmed)) {
+                          return 'Asset symbol already exists';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Name
+                    TextFormField(
+                      controller: _assetNameController,
+                      decoration: const InputDecoration(
+                        labelText: 'Asset Name',
+                        hintText: 'e.g. Apple Inc., Bitcoin',
+                        prefixIcon: Icon(Icons.info_outline),
+                      ),
+                      validator: (val) =>
+                          val == null || val.trim().isEmpty ? 'Enter a name' : null,
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Type Dropdown
+                    DropdownButtonFormField<String>(
+                      value: _selectedAssetType,
+                      decoration: const InputDecoration(
+                        labelText: 'Asset Type',
+                        prefixIcon: Icon(Icons.category_outlined),
+                      ),
+                      dropdownColor: AppTheme.darkCard,
+                      items: const [
+                        DropdownMenuItem(value: 'stock', child: Text('Stock')),
+                        DropdownMenuItem(value: 'crypto', child: Text('Crypto')),
+                        DropdownMenuItem(value: 'etf', child: Text('ETF')),
+                        DropdownMenuItem(value: 'other', child: Text('Other')),
+                      ],
+                      onChanged: (val) {
+                        if (val != null) {
+                          setState(() {
+                            _selectedAssetType = val;
+                          });
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 24),
+
+                    // Submit Button
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.mainAction,
+                          foregroundColor: Colors.black,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12)),
+                        ),
+                        icon: const Icon(Icons.add),
+                        label: const Text('Add Asset',
+                            style: TextStyle(fontWeight: FontWeight.bold)),
+                        onPressed: () async {
+                          if (_assetFormKey.currentState!.validate()) {
+                            final newAsset = Asset(
+                              id: const Uuid()
+                                  .v4()
+                                  .replaceAll('-', '')
+                                  .substring(0, 20),
+                              symbol: _assetSymbolController.text.trim().toUpperCase(),
+                              name: _assetNameController.text.trim(),
+                              type: _selectedAssetType,
+                            );
+
+                            await ds.saveAsset(newAsset);
+                            _assetSymbolController.clear();
+                            _assetNameController.clear();
+                            setState(() {
+                              _selectedAssetType = 'stock';
+                            });
+
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                    content: Text(
+                                        'Asset ${newAsset.symbol} created successfully.')),
+                              );
+                            }
+                          }
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+
+          final listWidget = Card(
+            child: Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Configured Assets',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: AppTheme.accentCyan,
+                        ),
+                  ),
+                  const SizedBox(height: 16),
+                  if (ds.assets.isEmpty)
+                    const Center(
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(vertical: 40.0),
+                        child: Text('No assets configured yet.'),
+                      ),
+                    )
+                  else
+                    ListView.separated(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: ds.assets.length,
+                      separatorBuilder: (context, index) =>
+                          const Divider(color: Color(0xFF23232A)),
+                      itemBuilder: (context, index) {
+                        final asset = ds.assets[index];
+                        final canDelete = !ds.holdings
+                            .any((h) => h.assetId == asset.id && h.quantity > 0);
+
+                        Widget deleteIconButton = IconButton(
+                          icon: Icon(
+                            Icons.delete_outline,
+                            color: canDelete
+                                ? Colors.redAccent
+                                : Colors.grey.withOpacity(0.4),
+                          ),
+                          onPressed: canDelete
+                              ? () async {
+                                  final confirm = await showDialog<bool>(
+                                    context: context,
+                                    builder: (context) => AlertDialog(
+                                      backgroundColor: AppTheme.darkCard,
+                                      title: const Text('Delete Asset'),
+                                      content: Text(
+                                          'Are you sure you want to delete ${asset.symbol}? This will permanently remove this asset metadata.'),
+                                      actions: [
+                                        TextButton(
+                                          onPressed: () =>
+                                              Navigator.pop(context, false),
+                                          child: const Text('Cancel',
+                                              style: TextStyle(
+                                                  color: AppTheme.textSecondary)),
+                                        ),
+                                        ElevatedButton(
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: AppTheme.dangerRed,
+                                            foregroundColor: Colors.white,
+                                          ),
+                                          onPressed: () =>
+                                              Navigator.pop(context, true),
+                                          child: const Text('Delete',
+                                              style: TextStyle(
+                                                  fontWeight: FontWeight.bold)),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+
+                                  if (confirm == true) {
+                                    await ds.deleteAsset(asset.id);
+                                    if (context.mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                            content: Text(
+                                                'Asset ${asset.symbol} deleted.')),
+                                      );
+                                    }
+                                  }
+                                }
+                              : null,
+                        );
+
+                        if (!canDelete) {
+                          deleteIconButton = Tooltip(
+                            message:
+                                'Cannot delete: Asset has active holdings in one or more accounts.',
+                            child: deleteIconButton,
+                          );
+                        }
+
+                        return ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: Text(asset.symbol,
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.bold)),
+                          subtitle: Text(
+                            '${asset.name} • ${asset.type.toUpperCase()}',
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                icon: const Icon(Icons.edit_outlined,
+                                    color: AppTheme.accentCyan),
+                                onPressed: () =>
+                                    _showEditAssetDialog(context, ds, asset),
+                              ),
+                              const SizedBox(width: 4),
+                              deleteIconButton,
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                ],
+              ),
+            ),
+          );
+
+          if (isWide) {
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(flex: 5, child: formWidget),
+                const SizedBox(width: 24),
+                Expanded(flex: 5, child: listWidget),
+              ],
+            );
+          }
+
+          return Column(
+            children: [
+              formWidget,
+              const SizedBox(height: 24),
+              listWidget,
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _showEditAssetDialog(
+      BuildContext context, DataService ds, Asset asset) async {
+    final editSymbolController = TextEditingController(text: asset.symbol);
+    final editNameController = TextEditingController(text: asset.name);
+    String editType = asset.type;
+    final editFormKey = GlobalKey<FormState>();
+
+    await showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              backgroundColor: AppTheme.darkCard,
+              shape:
+                  RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              title: Row(
+                children: const [
+                  Icon(Icons.edit_outlined, color: AppTheme.accentCyan),
+                  SizedBox(width: 8),
+                  Text('Edit Asset'),
+                ],
+              ),
+              content: Form(
+                key: editFormKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextFormField(
+                      controller: editSymbolController,
+                      textCapitalization: TextCapitalization.characters,
+                      decoration: const InputDecoration(labelText: 'Symbol'),
+                      validator: (val) {
+                        if (val == null || val.trim().isEmpty) {
+                          return 'Enter a symbol';
+                        }
+                        final trimmed = val.trim().toUpperCase();
+                        if (trimmed != asset.symbol &&
+                            ds.assets.any((a) => a.symbol == trimmed)) {
+                          return 'Asset symbol already exists';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: editNameController,
+                      decoration: const InputDecoration(labelText: 'Name'),
+                      validator: (val) => val == null || val.trim().isEmpty
+                          ? 'Enter a name'
+                          : null,
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      value: editType,
+                      decoration: const InputDecoration(labelText: 'Type'),
+                      dropdownColor: AppTheme.darkCard,
+                      items: const [
+                        DropdownMenuItem(value: 'stock', child: Text('Stock')),
+                        DropdownMenuItem(value: 'crypto', child: Text('Crypto')),
+                        DropdownMenuItem(value: 'etf', child: Text('ETF')),
+                        DropdownMenuItem(value: 'other', child: Text('Other')),
+                      ],
+                      onChanged: (val) {
+                        if (val != null) {
+                          setDialogState(() {
+                            editType = val;
+                          });
+                        }
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancel',
+                      style: TextStyle(color: AppTheme.textSecondary)),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.accentCyan,
+                    foregroundColor: Colors.black,
+                  ),
+                  onPressed: () async {
+                    if (editFormKey.currentState!.validate()) {
+                      final updatedAsset = Asset(
+                        id: asset.id,
+                        symbol: editSymbolController.text.trim().toUpperCase(),
+                        name: editNameController.text.trim(),
+                        type: editType,
+                      );
+                      await ds.saveAsset(updatedAsset);
+                      if (context.mounted) {
+                        Navigator.pop(context);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                              content: Text('Asset updated successfully.')),
+                        );
+                      }
+                    }
+                  },
+                  child: const Text('Save',
+                      style: TextStyle(fontWeight: FontWeight.bold)),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 }

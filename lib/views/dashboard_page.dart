@@ -778,8 +778,12 @@ class _DashboardPageState extends State<DashboardPage> {
       final amountInDisplay = service.convertToDisplay(tx.amount, tx.currency);
       final day = tx.date.day;
       if (amountInDisplay > 0) {
-        dailyIncomeMap[day] = (dailyIncomeMap[day] ?? 0.0) + amountInDisplay;
-        totalIncome += amountInDisplay;
+        // To avoid double counting, only consider income transactions going into 
+        // the account called Debit (ID: lRxdeALz9r36juQIjKp7) as requested.
+        if (tx.accountId == 'lRxdeALz9r36juQIjKp7') {
+          dailyIncomeMap[day] = (dailyIncomeMap[day] ?? 0.0) + amountInDisplay;
+          totalIncome += amountInDisplay;
+        }
       } else {
         dailyExpenseMap[day] = (dailyExpenseMap[day] ?? 0.0) + amountInDisplay.abs();
         totalExpenses += amountInDisplay.abs();

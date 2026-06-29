@@ -27,7 +27,7 @@ class DataService extends ChangeNotifier {
   List<Asset> assets = [];
   List<BudgetTarget> budgetTargets = [];
   List<RecurringTransaction> recurringTransactions = [];
-  bool _hasHealedV2 = false; // CUSTOMIZATION PREFERENCE: Protect from multiple runs of healing script
+  bool _hasHealedV3 = false; // CUSTOMIZATION PREFERENCE: Protect from multiple runs of healing script
 
   // Live asset prices from Alpha Vantage API
   final Map<String, double> currentAssetPrices = {};
@@ -568,6 +568,26 @@ class DataService extends ChangeNotifier {
               : account.currentBalance + convertedAmount,
         );
         await _firestore.saveAccount(updatedAccount);
+        accounts[accountIndex] = updatedAccount;
+      }
+
+      // CUSTOMIZATION PREFERENCE: Automatically log a CASH asset transaction for cash ledger transactions in capital accounts
+      if (account.accountGroup == 'capital') {
+        final cashAssetTxId = 'cash_asset_' + tx.id;
+        final cashAssetTx = AssetTransaction(
+          id: cashAssetTxId,
+          transactionId: tx.id,
+          accountId: tx.accountId,
+          assetId: 'CASH',
+          type: tx.amount < 0 ? 'sell' : 'buy', // Outflow sells CASH, inflow buys CASH
+          quantity: tx.amount.abs(),
+          unitPrice: 1.0,
+          executedAt: tx.date,
+          assetSymbol: 'CASH',
+          assetName: 'Cash',
+        );
+        await _firestore.saveAssetTransaction(cashAssetTx);
+        await _recalculateHolding(cashAssetTx);
       }
     }
   }
@@ -590,9 +610,16 @@ class DataService extends ChangeNotifier {
               : account.currentBalance - convertedAmount,
         );
         await _firestore.saveAccount(updatedAccount);
+        accounts[accountIndex] = updatedAccount;
+      }
+
+      // CUSTOMIZATION PREFERENCE: Automatically delete corresponding CASH asset transaction for capital accounts
+      if (account.accountGroup == 'capital') {
+        final cashAssetTxId = 'cash_asset_' + tx.id;
+        await _firestore.deleteAssetTransaction(cashAssetTxId);
+        await recalculateHoldingFromScratch(tx.accountId, 'CASH', excludeTxId: cashAssetTxId);
       }
     }
-
     // 3. Find and soft-delete any paired transfer transaction
     String? transferTag;
     for (final tag in tx.tags) {
@@ -629,6 +656,14 @@ class DataService extends ChangeNotifier {
                   : account.currentBalance - nonNullPairedTx.amount,
             );
             await _firestore.saveAccount(updatedAccount);
+            accounts[pairedAccountIndex] = updatedAccount;
+          }
+
+          // CUSTOMIZATION PREFERENCE: Delete paired CASH asset transaction if destination account is capital
+          if (account.accountGroup == 'capital') {
+            final cashAssetTxId = 'cash_asset_' + nonNullPairedTx.id;
+            await _firestore.deleteAssetTransaction(cashAssetTxId);
+            await recalculateHoldingFromScratch(nonNullPairedTx.accountId, 'CASH', excludeTxId: cashAssetTxId);
           }
         }
       }
@@ -698,6 +733,14 @@ class DataService extends ChangeNotifier {
       if (!newIds.contains(tx.id)) {
         final deletedTx = tx.copyWith(status: 'deleted');
         await _firestore.saveTransaction(deletedTx);
+
+        // CUSTOMIZATION PREFERENCE: Delete corresponding CASH asset transaction
+        final account = accounts.firstWhere((a) => a.id == tx.accountId, orElse: () => null);
+        if (account != null && account.accountGroup == 'capital') {
+          final cashAssetTxId = 'cash_asset_' + tx.id;
+          await _firestore.deleteAssetTransaction(cashAssetTxId);
+          await recalculateHoldingFromScratch(tx.accountId, 'CASH', excludeTxId: cashAssetTxId);
+        }
       }
     }
 
@@ -729,6 +772,25 @@ class DataService extends ChangeNotifier {
           );
           await _firestore.saveAccount(updatedAccount);
           accounts[accountIndex] = updatedAccount;
+        }
+
+        // CUSTOMIZATION PREFERENCE: Create/update corresponding CASH asset transaction
+        if (account.accountGroup == 'capital') {
+          final cashAssetTxId = 'cash_asset_' + tx.id;
+          final cashAssetTx = AssetTransaction(
+            id: cashAssetTxId,
+            transactionId: tx.id,
+            accountId: tx.accountId,
+            assetId: 'CASH',
+            type: tx.amount < 0 ? 'sell' : 'buy',
+            quantity: tx.amount.abs(),
+            unitPrice: 1.0,
+            executedAt: tx.date,
+            assetSymbol: 'CASH',
+            assetName: 'Cash',
+          );
+          await _firestore.saveAssetTransaction(cashAssetTx);
+          await _recalculateHolding(cashAssetTx);
         }
       }
     }
@@ -809,8 +871,24 @@ class DataService extends ChangeNotifier {
     // Write deletion to Firestore
     await _firestore.deleteAssetTransaction(assetTx.id);
 
+    // CUSTOMIZATION PREFERENCE: Delete corresponding cash ledger transaction (which deletes CASH asset transaction)
+    if (assetTx.transactionId != null) {
+      final cashTx = transactions.firstWhere((t) => t.id == assetTx.transactionId, orElse: () => null);
+      if (cashTx != null) {
+        await deleteTransaction(cashTx);
+      }
+    }
+
     // Recalculate holdings chronologically from scratch, excluding the deleted transaction
     await recalculateHoldingFromScratch(assetTx.accountId, assetTx.assetId, excludeTxId: assetTx.id);
+  }
+
+  Future<void> saveAsset(Asset asset) async {
+    await _firestore.saveAsset(asset);
+  }
+
+  Future<void> deleteAsset(String assetId) async {
+    await _firestore.deleteAsset(assetId);
   }
 
   Stream<List<AssetTransaction>> streamAssetTransactionsPaged({required int limit}) {
@@ -959,6 +1037,8 @@ class DataService extends ChangeNotifier {
     );
 
     final symbol = asset.symbol;
+    // CUSTOMIZATION PREFERENCE: Cash asset price is always 1.0 in its own currency
+    if (symbol == 'CASH') return 1.0;
     if (symbol.isEmpty) return holding.avgBuyPrice;
 
     // Check if cache has expired or doesn't exist
@@ -1202,6 +1282,9 @@ class DataService extends ChangeNotifier {
     
     for (var acc in accounts) {
       if (acc.status != 'active') continue;
+      // CUSTOMIZATION PREFERENCE: Skip adding cash balance directly for capital accounts because it is already tracked
+      // as a CASH holding asset.
+      if (acc.accountGroup == 'capital') continue;
       
       double balanceInTarget = convert(acc.currentBalance, acc.currency, targetCurrency);
       if (acc.type == 'credit_card') {
@@ -1238,11 +1321,54 @@ class DataService extends ChangeNotifier {
 
   // CUSTOMIZATION PREFERENCE: Self-healing routine to fix incorrect assetId records and missing cash operations
   Future<void> _healDatabaseRecordsOnce() async {
-    if (_hasHealedV2) return;
+    if (_hasHealedV3) return;
     if (accounts.isEmpty || categories.isEmpty || assets.isEmpty || assetTransactions.isEmpty || transactions.isEmpty) return;
-    _hasHealedV2 = true;
+    _hasHealedV3 = true;
 
     try {
+      // CUSTOMIZATION PREFERENCE: Make sure the CASH asset type is registered in the database
+      final cashAssetExists = assets.any((a) => a.id == 'CASH');
+      if (!cashAssetExists) {
+        await _firestore.saveAsset(Asset(
+          id: 'CASH',
+          symbol: 'CASH',
+          name: 'Cash',
+          type: 'cash',
+        ));
+      }
+
+      // CUSTOMIZATION PREFERENCE: Generate any missing CASH asset transactions for legacy capital account cash flows
+      for (final tx in transactions) {
+        if (tx.status == 'deleted') continue;
+        final account = accounts.firstWhere((a) => a.id == tx.accountId, orElse: () => null);
+        if (account != null && account.accountGroup == 'capital') {
+          final cashAssetTxId = 'cash_asset_' + tx.id;
+          final exists = assetTransactions.any((at) => at.id == cashAssetTxId);
+          if (!exists) {
+            final cashAssetTx = AssetTransaction(
+              id: cashAssetTxId,
+              transactionId: tx.id,
+              accountId: tx.accountId,
+              assetId: 'CASH',
+              type: tx.amount < 0 ? 'sell' : 'buy',
+              quantity: tx.amount.abs(),
+              unitPrice: 1.0,
+              executedAt: tx.date,
+              assetSymbol: 'CASH',
+              assetName: 'Cash',
+            );
+            await _firestore.saveAssetTransaction(cashAssetTx);
+          }
+        }
+      }
+
+      // CUSTOMIZATION PREFERENCE: Force recalculation of CASH holdings for all capital accounts
+      for (final account in accounts) {
+        if (account.accountGroup == 'capital') {
+          await recalculateHoldingFromScratch(account.id, 'CASH');
+        }
+      }
+
       final correctMsftAsset = assets.firstWhere(
         (a) => a.symbol == 'MSFT' && a.id != 'MSFT',
         orElse: () => assets.firstWhere((a) => a.symbol == 'MSFT'),

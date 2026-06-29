@@ -176,6 +176,7 @@ class _HoldingsPageState extends State<HoldingsPage> {
       'stock': [],
       'crypto': [],
       'etf': [],
+      'cash': [],
       'other': [],
     };
 
@@ -643,7 +644,10 @@ class _HoldingsPageState extends State<HoldingsPage> {
           final currentPrice = service.getHoldingCurrentPrice(item, account);
           return sum + service.convertToDisplay(item.quantity * currentPrice, account.currency);
         });
-        double totalVal = service.convertToDisplay(account.currentBalance, account.currency) + holdingsVal;
+        // CUSTOMIZATION PREFERENCE: Prevent double counting for capital accounts which already track cash as a CASH asset holding
+        double totalVal = account.accountGroup == 'capital' 
+            ? holdingsVal 
+            : service.convertToDisplay(account.currentBalance, account.currency) + holdingsVal;
         addAccountValue(account, totalVal);
       }
     }
@@ -660,7 +664,10 @@ class _HoldingsPageState extends State<HoldingsPage> {
             final currentPrice = service.getHoldingCurrentPrice(item, account);
             return sum + service.convertToDisplay(item.quantity * currentPrice, account.currency);
           });
-          double totalVal = service.convertToDisplay(account.currentBalance, account.currency) + holdingsVal;
+          // CUSTOMIZATION PREFERENCE: Prevent double counting for capital accounts which already track cash as a CASH asset holding
+          double totalVal = account.accountGroup == 'capital'
+              ? holdingsVal
+              : service.convertToDisplay(account.currentBalance, account.currency) + holdingsVal;
           addAccountValue(account, totalVal);
         }
       }
@@ -907,13 +914,17 @@ class _HoldingsPageState extends State<HoldingsPage> {
               ? 'Crypto' 
               : type == 'etf' 
                   ? 'ETFs' 
-                  : 'Other Assets';
+                  : type == 'cash'
+                      ? 'Cash'
+                      : 'Other Assets';
 
       final Color typeColor = type == 'crypto' 
           ? const Color(0xFFF59E0B) 
           : type == 'etf' 
               ? AppTheme.mainAction 
-              : AppTheme.accentCyan;
+              : type == 'cash'
+                  ? const Color(0xFFA78BFA)
+                  : AppTheme.accentCyan;
 
       // Calculate category sum using current value
       double categoryTotal = 0.0;

@@ -895,6 +895,23 @@ class _AddTransactionDialogState extends State<AddTransactionDialog> {
                       createdAt: editTx?.createdAt ?? DateTime.now(),
                     );
 
+                    String destCategoryId = _selectedCategoryId!;
+                    if (destAccount.accountGroup == 'capital') {
+                      final depositCat = dataService.categories.firstWhere(
+                        (c) => c.type == 'income' && c.name.toLowerCase().contains('deposit'),
+                        orElse: () => dataService.categories.firstWhere(
+                          (c) => c.type == 'income',
+                          orElse: () => Category(
+                            id: 'deposit_default',
+                            name: 'Deposit',
+                            type: 'income',
+                            createdAt: DateTime.now(),
+                          ),
+                        ),
+                      );
+                      destCategoryId = depositCat.id;
+                    }
+
                     // 2. Inflow transaction (with currency conversion if different)
                     final inflowAmount = dataService.convert(absAmount, sourceAccount.currency, destAccount.currency);
                     final inflowTx = Transaction(
@@ -902,7 +919,7 @@ class _AddTransactionDialogState extends State<AddTransactionDialog> {
                           ? (editTx.amount >= 0 ? editTx.id : (pairedTx?.id ?? _uuid.v4().substring(0, 20)))
                           : _uuid.v4().substring(0, 20),
                       accountId: _selectedTransferToAccountId!,
-                      categoryId: _selectedCategoryId!,
+                      categoryId: destCategoryId,
                       amount: inflowAmount,
                       currency: destAccount.currency,
                       date: _selectedDate,

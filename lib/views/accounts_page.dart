@@ -79,19 +79,36 @@ class _AccountsPageState extends State<AccountsPage> {
                             style: Theme.of(context).textTheme.bodyMedium,
                           ),
                           const SizedBox(height: 12),
-                          SizedBox(
-                            width: double.infinity,
-                            child: ElevatedButton.icon(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: AppTheme.accentCyan,
-                                foregroundColor: Colors.black,
-                                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: ElevatedButton.icon(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: AppTheme.accentCyan,
+                                    foregroundColor: Colors.black,
+                                    padding: const EdgeInsets.symmetric(vertical: 12),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                  ),
+                                  icon: const Icon(Icons.account_balance),
+                                  label: const Text('New Account'),
+                                  onPressed: () => _showAddAccountDialog(context, dataService),
+                                ),
                               ),
-                              icon: const Icon(Icons.account_balance),
-                              label: const Text('New Account'),
-                              onPressed: () => _showAddAccountDialog(context, dataService),
-                            ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: ElevatedButton.icon(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: AppTheme.primaryPurple,
+                                    foregroundColor: Colors.black,
+                                    padding: const EdgeInsets.symmetric(vertical: 12),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                  ),
+                                  icon: const Icon(Icons.camera_alt_outlined),
+                                  label: const Text('Snapshot All'),
+                                  onPressed: () => _showSnapshotAllConfirmation(context, dataService),
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                       )
@@ -112,16 +129,32 @@ class _AccountsPageState extends State<AccountsPage> {
                               ),
                             ],
                           ),
-                          ElevatedButton.icon(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppTheme.accentCyan,
-                              foregroundColor: Colors.black,
-                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                            ),
-                            icon: const Icon(Icons.account_balance),
-                            label: const Text('New Account'),
-                            onPressed: () => _showAddAccountDialog(context, dataService),
+                          Row(
+                            children: [
+                              ElevatedButton.icon(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: AppTheme.accentCyan,
+                                  foregroundColor: Colors.black,
+                                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                ),
+                                icon: const Icon(Icons.account_balance),
+                                label: const Text('New Account'),
+                                onPressed: () => _showAddAccountDialog(context, dataService),
+                              ),
+                              const SizedBox(width: 12),
+                              ElevatedButton.icon(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: AppTheme.primaryPurple,
+                                  foregroundColor: Colors.black,
+                                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                ),
+                                icon: const Icon(Icons.camera_alt_outlined),
+                                label: const Text('Snapshot All Accounts'),
+                                onPressed: () => _showSnapshotAllConfirmation(context, dataService),
+                              ),
+                            ],
                           ),
                         ],
                       ),
@@ -190,35 +223,33 @@ class _AccountsPageState extends State<AccountsPage> {
 
     final bool isMobile = MediaQuery.of(context).size.width < 600;
 
-    if (isMobile) {
-      return ListView.builder(
-        padding: const EdgeInsets.symmetric(vertical: 8.0),
-        itemCount: filteredAccounts.length,
-        itemBuilder: (context, index) {
-          final account = filteredAccounts[index];
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 12.0),
-            child: _buildAccountCard(context, account, dataService, currencyFormatter),
-          );
-        },
-      );
-    }
-
-    return GridView.builder(
-      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-        maxCrossAxisExtent: 350,
-        mainAxisSpacing: 20,
-        crossAxisSpacing: 20,
-        childAspectRatio: 1.5,
-      ),
+    // Build the main list view with uniform spacing between accounts
+    final listView = ListView.separated(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
       itemCount: filteredAccounts.length,
+      separatorBuilder: (context, index) => const SizedBox(height: 8.0),
       itemBuilder: (context, index) {
         final account = filteredAccounts[index];
-        return _buildAccountCard(context, account, dataService, currencyFormatter);
+        return _buildAccountListItem(context, account, dataService, currencyFormatter);
       },
+    );
+
+    // On mobile devices, list stretches full width
+    if (isMobile) {
+      return listView;
+    }
+
+    // On desktop screens, align top-center and constrain width to 800px for comfortable reading
+    return Align(
+      alignment: Alignment.topCenter,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 800),
+        child: listView,
+      ),
     );
   }
 
+  /// Returns localized labels, brand styling colors, and icons for each account type.
   Map<String, dynamic> _getTypeDetails(String type) {
     switch (type) {
       case 'checking':
@@ -266,26 +297,38 @@ class _AccountsPageState extends State<AccountsPage> {
     }
   }
 
-  Widget _buildAccountCard(BuildContext context, Account account, DataService dataService, NumberFormat currencyFormatter) {
+  /// Builds an individual Account List Item according to Material 3 Lists standards.
+  /// Replaces the old card layout to improve layout scanning.
+  Widget _buildAccountListItem(BuildContext context, Account account, DataService dataService, NumberFormat currencyFormatter) {
+    // 1. Calculate Valuation:
+    // CUSTOMIZATION PREFERENCE: For capital accounts, the total balance is calculated by the sum of the current value of the total assets
+    // (including the cash asset) in the account.
     double totalVal = account.currentBalance;
-    bool isBrokerage = account.type == 'investment' || account.type == 'retirement';
+    bool isCapital = account.accountGroup == 'capital';
     
-    if (isBrokerage) {
+    if (isCapital) {
       final accountHoldings = dataService.holdings.where((h) => h.accountId == account.id);
-      double holdingsVal = accountHoldings.fold(0.0, (sum, item) => sum + (item.quantity * item.avgBuyPrice));
-      totalVal = account.currentBalance + holdingsVal;
+      totalVal = accountHoldings.fold(0.0, (sum, item) {
+        final currentPrice = dataService.getHoldingCurrentPrice(item, account);
+        return sum + (item.quantity * currentPrice);
+      });
     }
 
+    // 2. Fetch Account Brand Assets:
     final typeDetails = _getTypeDetails(account.type);
     final Color typeColor = typeDetails['color'] as Color;
     final IconData typeIcon = typeDetails['icon'] as IconData;
     final String typeLabel = typeDetails['label'] as String;
 
     final bool isMobile = MediaQuery.of(context).size.width < 600;
+
+    // 3. Evaluate Constraints Violations:
+    // Credit card balances must not exceed the limit. Checking/Savings balances must remain above minimums.
     final bool isLimitViolated = (account.type == 'credit_card' && account.limit > 0 && totalVal > account.limit) ||
         ((account.type == 'checking' || account.type == 'savings') && account.limit > 0 && totalVal < account.limit);
 
-    // Get historical snapshots points for the graph
+    // 4. Calculate Balance Growth Trends:
+    // Fetch historical snapshots to compute the percentage change from the last recording
     final accountSnapshots = dataService.snapshots
         .where((s) => s.accountId == account.id)
         .toList();
@@ -300,242 +343,235 @@ class _AccountsPageState extends State<AccountsPage> {
       }
     }
 
-    final Color cardBorderColor = isLimitViolated
+    // 5. Setup Highlight Indicators:
+    // When limit is violated, color becomes warningOrange/dangerRed and borders double in thickness.
+    final Color borderSideColor = isLimitViolated
         ? (account.type == 'credit_card' ? AppTheme.dangerRed : AppTheme.warningOrange)
-        : typeColor.withOpacity(0.35);
+        : typeColor.withOpacity(0.25);
 
-    final Color glowColor = isLimitViolated
+    final Color highlightColor = isLimitViolated
         ? (account.type == 'credit_card' ? AppTheme.dangerRed : AppTheme.warningOrange)
         : typeColor;
 
-    return AspectRatio(
-      aspectRatio: isMobile ? 2.2 : 1.586, // Sleeker ratio on mobile to prevent wasted space
-      child: Card(
-        elevation: 10,
-        margin: EdgeInsets.zero,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-          side: BorderSide(
-            color: cardBorderColor,
-            width: isLimitViolated ? 2.0 : 1.2,
-          ),
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 4.0),
+      decoration: BoxDecoration(
+        color: AppTheme.darkCard,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: borderSideColor,
+          width: isLimitViolated ? 2.0 : 1.0,
         ),
-        child: Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(20),
-            gradient: LinearGradient(
-              colors: [
-                const Color(0xFF131317),
-                glowColor.withOpacity(isLimitViolated ? 0.15 : 0.08),
-                const Color(0xFF09090B),
-              ],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
+        boxShadow: isLimitViolated ? [
+          BoxShadow(
+            color: highlightColor.withOpacity(0.12),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          )
+        ] : null,
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () => _showManageAccountDialog(context, account, dataService, totalVal),
+          child: Padding(
+            padding: EdgeInsets.symmetric(
+              horizontal: isMobile ? 12.0 : 16.0,
+              vertical: 12.0,
             ),
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(20),
-            child: Stack(
+            child: Row(
               children: [
-                // Glowing background ambient decoration blobs
-                Positioned(
-                  right: -40,
-                  top: -40,
-                  child: Container(
-                    width: 150,
-                    height: 150,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      gradient: RadialGradient(
-                        colors: [
-                          glowColor.withOpacity(0.22),
-                          glowColor.withOpacity(0.0),
-                        ],
-                      ),
+                // Leading: Type Brand Icon Container (Warn icon shows if limits violated)
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: highlightColor.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: highlightColor.withOpacity(0.35),
+                      width: 1.5,
+                    ),
+                  ),
+                  child: Center(
+                    child: Icon(
+                      isLimitViolated ? Icons.warning_amber_rounded : typeIcon,
+                      color: highlightColor,
+                      size: 22,
                     ),
                   ),
                 ),
-                Positioned(
-                  left: -50,
-                  bottom: -50,
-                  child: Container(
-                    width: 180,
-                    height: 180,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      gradient: RadialGradient(
-                        colors: [
-                          glowColor.withOpacity(0.18),
-                          glowColor.withOpacity(0.0),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-
-                // Main content layout
-                Padding(
-                  padding: EdgeInsets.all(isMobile ? 11.0 : 18.0),
+                SizedBox(width: isMobile ? 12 : 16),
+                
+                // Middle Body: Account Identifiers and Constraints
+                Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      // Top Row: Institution name & Account name + type column
+                      // Institution name overline
+                      Text(
+                        account.institution?.toUpperCase() ?? "VIRTUAL CARD",
+                        style: GoogleFonts.inter(
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 1.0,
+                          color: AppTheme.textSecondary,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 2),
+                      // Account name & color type pill tag
                       Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          Expanded(
+                          Flexible(
                             child: Text(
-                              account.institution?.toUpperCase() ?? "VIRTUAL CARD",
-                              style: GoogleFonts.inter(
-                                fontSize: isMobile ? 12 : 10,
+                              account.name,
+                              style: GoogleFonts.outfit(
+                                fontSize: isMobile ? 15 : 16,
                                 fontWeight: FontWeight.bold,
-                                letterSpacing: 1.2,
-                                color: Colors.white70,
+                                color: Colors.white,
                               ),
+                              maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
                           const SizedBox(width: 8),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.end,
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: typeColor.withOpacity(0.08),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: typeColor.withOpacity(0.2),
+                                width: 0.8,
+                              ),
+                            ),
+                            child: Text(
+                              typeLabel,
+                              style: GoogleFonts.inter(
+                                fontSize: 9,
+                                fontWeight: FontWeight.w600,
+                                color: typeColor,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      // Constraint description: remaining balance vs minimum balance
+                      if (account.type == 'credit_card' && account.limit > 0) ...[
+                        Text(
+                          (account.limit - totalVal) < 0
+                              ? 'Rem: ${dataService.formatAndConvert(account.limit - totalVal, account.currency)} (Over Limit!)'
+                              : 'Rem: ${dataService.formatAndConvert(account.limit - totalVal, account.currency)}',
+                          style: GoogleFonts.inter(
+                            fontSize: 11,
+                            color: (account.limit - totalVal) < 0 ? AppTheme.dangerRed : AppTheme.successGreen,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ] else if ((account.type == 'checking' || account.type == 'savings') && account.limit > 0) ...[
+                        Text(
+                          totalVal < account.limit
+                              ? 'Min: ${dataService.formatAndConvert(account.limit, account.currency)} (Below Limit!)'
+                              : 'Min: ${dataService.formatAndConvert(account.limit, account.currency)}',
+                          style: GoogleFonts.inter(
+                            fontSize: 11,
+                            color: totalVal < account.limit ? AppTheme.warningOrange : AppTheme.textSecondary,
+                            fontWeight: totalVal < account.limit ? FontWeight.bold : FontWeight.normal,
+                          ),
+                        ),
+                      ] else ...[
+                        Text(
+                          'No limit restrictions',
+                          style: GoogleFonts.inter(
+                            fontSize: 11,
+                            color: AppTheme.textSecondary.withOpacity(0.6),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                SizedBox(width: isMobile ? 8 : 16),
+                
+                // Trailing: Numerical Valuation, growth indicators and dialog trigger
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          account.type == 'credit_card' ? 'Owed' : 'Balance',
+                          style: GoogleFonts.inter(
+                            fontSize: 10,
+                            color: AppTheme.textSecondary,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              dataService.formatAndConvert(totalVal, account.currency),
+                              style: GoogleFonts.outfit(
+                                fontWeight: FontWeight.bold,
+                                fontSize: isMobile ? 16 : 18,
+                                color: isLimitViolated ? highlightColor : Colors.white,
+                              ),
+                            ),
+                            if (isLimitViolated) ...[
+                              const SizedBox(width: 4),
+                              Icon(
+                                Icons.warning_amber_rounded,
+                                color: highlightColor,
+                                size: 14,
+                              ),
+                            ],
+                          ],
+                        ),
+                        // Historical trend balance growth display
+                        if (changePercent != 0.0) ...[
+                          const SizedBox(height: 2),
+                          Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Text(
-                                account.name.toUpperCase(),
-                                style: GoogleFonts.outfit(
-                                  fontSize: isMobile ? 16 : 18,
-                                  fontWeight: FontWeight.w900,
-                                  fontStyle: FontStyle.italic,
-                                  color: typeColor.withOpacity(0.95),
-                                  letterSpacing: 1.0,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
+                              Icon(
+                                changePercent > 0.0 ? Icons.trending_up : Icons.trending_down,
+                                color: changePercent > 0.0 ? AppTheme.successGreen : AppTheme.dangerRed,
+                                size: 11,
                               ),
-                              const SizedBox(height: 4),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withOpacity(0.08),
-                                  borderRadius: BorderRadius.circular(20),
-                                  border: Border.all(
-                                    color: Colors.white.withOpacity(0.12),
-                                    width: 0.8,
-                                  ),
-                                ),
-                                child: Text(
-                                  typeLabel,
-                                  style: GoogleFonts.inter(
-                                    fontSize: isMobile ? 11 : 10,
-                                    fontWeight: FontWeight.w600,
-                                    color: Colors.white.withOpacity(0.9),
-                                  ),
+                              const SizedBox(width: 2),
+                              Text(
+                                '${changePercent > 0.0 ? '+' : ''}${changePercent.toStringAsFixed(1)}%',
+                                style: GoogleFonts.inter(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                  color: changePercent > 0.0 ? AppTheme.successGreen : AppTheme.dangerRed,
                                 ),
                               ),
                             ],
                           ),
                         ],
-                      ),
-                      
-                      const Spacer(),
-
-                      // Bottom Row: Balance & limits left, settings dots button right
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  account.type == 'credit_card' ? 'Amount Owed' : 'Available Balance',
-                                  style: GoogleFonts.inter(
-                                    fontSize: isMobile ? 11 : 10,
-                                    color: Colors.white60,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Row(
-                                  crossAxisAlignment: CrossAxisAlignment.center,
-                                  children: [
-                                    Flexible(
-                                      child: Text(
-                                        dataService.formatAndConvert(totalVal, account.currency),
-                                        style: GoogleFonts.outfit(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: isMobile ? 21 : 22,
-                                          color: isLimitViolated
-                                              ? (account.type == 'credit_card' ? AppTheme.dangerRed : AppTheme.warningOrange)
-                                              : Colors.white,
-                                        ),
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                    if (isLimitViolated) ...[
-                                      const SizedBox(width: 6),
-                                      Icon(
-                                        Icons.warning_amber_rounded,
-                                        color: account.type == 'credit_card' ? AppTheme.dangerRed : AppTheme.warningOrange,
-                                        size: 16,
-                                      ),
-                                    ],
-                                  ],
-                                ),
-                                if (account.type == 'credit_card' && account.limit > 0) ...[
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    (account.limit - totalVal) < 0
-                                        ? 'Rem: ${dataService.formatAndConvert(account.limit - totalVal, account.currency)} (Over Limit!)'
-                                        : 'Rem: ${dataService.formatAndConvert(account.limit - totalVal, account.currency)}',
-                                    style: GoogleFonts.inter(
-                                      fontSize: isMobile ? 11 : 10,
-                                      color: (account.limit - totalVal) < 0 ? AppTheme.dangerRed : AppTheme.successGreen,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ] else if ((account.type == 'checking' || account.type == 'savings') && account.limit > 0) ...[
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    totalVal < account.limit
-                                        ? 'Min: ${dataService.formatAndConvert(account.limit, account.currency)} (Below Limit!)'
-                                        : 'Min: ${dataService.formatAndConvert(account.limit, account.currency)}',
-                                    style: GoogleFonts.inter(
-                                      fontSize: isMobile ? 11 : 10,
-                                      color: totalVal < account.limit ? AppTheme.warningOrange : AppTheme.textSecondary,
-                                      fontWeight: totalVal < account.limit ? FontWeight.bold : FontWeight.normal,
-                                    ),
-                                  ),
-                                ],
-                              ],
-                            ),
-                          ),
-                          GestureDetector(
-                            onTap: () => _showManageAccountDialog(context, account, dataService, totalVal),
-                            child: Container(
-                              padding: EdgeInsets.all(isMobile ? 8 : 6),
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: Colors.white.withOpacity(0.05),
-                                border: Border.all(
-                                  color: Colors.white.withOpacity(0.1),
-                                  width: 0.8,
-                                ),
-                              ),
-                              child: Icon(
-                                Icons.more_vert,
-                                color: Colors.white.withOpacity(0.9),
-                                size: isMobile ? 16 : 14,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
+                      ],
+                    ),
+                    SizedBox(width: isMobile ? 4 : 8),
+                    // Dialog settings button
+                    IconButton(
+                      icon: const Icon(Icons.more_vert, size: 20),
+                      color: AppTheme.textSecondary,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                      onPressed: () => _showManageAccountDialog(context, account, dataService, totalVal),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -746,6 +782,87 @@ class _AccountsPageState extends State<AccountsPage> {
                       SnackBar(content: Text('Error creating snapshot: $e')),
                     );
                   }
+                }
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  /// Displays a confirmation dialog before creating a synchronized historical balance snapshot
+  /// for all currently active accounts. Helpful for quick global portfolio tracking.
+  void _showSnapshotAllConfirmation(BuildContext context, DataService dataService) {
+    final activeAccounts = dataService.accounts.where((a) => a.status == 'active').toList();
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          backgroundColor: AppTheme.darkCard,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Row(
+            children: [
+              const Icon(Icons.camera_alt_outlined, color: AppTheme.primaryPurple),
+              const SizedBox(width: 8),
+              const Text('Snapshot All Accounts'),
+            ],
+          ),
+          content: Text(
+            'Create a new historical balance snapshot for all ${activeAccounts.length} active accounts at their current balances?\n\n'
+            'This will capture a baseline point for all accounts simultaneously to keep your net worth tracking synchronized.',
+            style: Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.4),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel', style: TextStyle(color: AppTheme.textSecondary)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.primaryPurple,
+                foregroundColor: Colors.black,
+              ),
+              child: const Text('Create Bulk Snapshots'),
+              onPressed: () async {
+                if (activeAccounts.isEmpty) {
+                  Navigator.of(context).pop();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('No active accounts to snapshot.')),
+                  );
+                  return;
+                }
+
+                int successCount = 0;
+                final DateTime now = DateTime.now();
+
+                // Close confirmation dialog first
+                Navigator.of(context).pop();
+
+                for (var account in activeAccounts) {
+                  final String snapshotId = const Uuid().v4().substring(0, 20);
+                  final newSnapshot = AccountSnapshot(
+                    id: snapshotId,
+                    accountId: account.id,
+                    snapshotDate: now,
+                    balance: account.currentBalance,
+                    currency: account.currency,
+                    createdAt: now,
+                  );
+
+                  try {
+                    await dataService.addAccountSnapshot(newSnapshot);
+                    successCount++;
+                  } catch (e) {
+                    // Log error or proceed silently
+                  }
+                }
+
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Successfully created snapshots for $successCount of ${activeAccounts.length} active accounts.')),
+                  );
                 }
               },
             ),
