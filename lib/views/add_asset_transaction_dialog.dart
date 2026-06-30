@@ -70,9 +70,21 @@ class _AddAssetTransactionDialogState extends State<AddAssetTransactionDialog> {
   Widget build(BuildContext context) {
     final service = widget.dataService;
     
-    // Filter and sort active cash ledger transactions belonging to the selected account
+    // Filter and sort active cash ledger transactions belonging to the selected account.
+    // CRITICAL: We filter by transaction type to prevent user errors (e.g. linking a buy trade
+    // to a cash inflow sale transaction, which would bypass the cash deduction logic).
+    // - Buy or Dividend Reinvest trades (cash outflows) can only link to negative transactions (amount < 0).
+    // - Sell trades (cash inflows) can only link to positive transactions (amount > 0).
     final linkedTxsList = service.transactions
         .where((t) => t.status != 'deleted' && t.accountId == _selectedAccount?.id)
+        .where((t) {
+          if (_selectedTxType == 'buy' || _selectedTxType == 'dividend_reinvest') {
+            return t.amount < 0;
+          } else if (_selectedTxType == 'sell') {
+            return t.amount > 0;
+          }
+          return true;
+        })
         .toList();
     linkedTxsList.sort((a, b) => b.date.compareTo(a.date));
     final recentTxs = linkedTxsList.take(20).toList();
@@ -259,6 +271,8 @@ class _AddAssetTransactionDialogState extends State<AddAssetTransactionDialog> {
                   if (val != null) {
                     setState(() {
                       _selectedTxType = val;
+                      // CRITICAL: Reset selected linked transaction on type change to prevent cross-type linkage errors.
+                      _selectedLinkedTx = null; 
                     });
                   }
                 },
@@ -351,6 +365,22 @@ class _AddAssetTransactionDialogState extends State<AddAssetTransactionDialog> {
                 const SnackBar(content: Text('Quantity and unit price must be positive numbers.')),
               );
               return;
+            }
+
+            // CRITICAL: Prevent purchases (Buy / Dividend Reinvest) if there is insufficient cash in the account.
+            if (_selectedTxType == 'buy' || _selectedTxType == 'dividend_reinvest') {
+              final cost = qty * price;
+              final availableBalance = _selectedAccount!.currentBalance;
+              if (_selectedLinkedTx == null && availableBalance < cost) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      'Insufficient cash in account (${_selectedAccount!.currency} ${availableBalance.toStringAsFixed(2)}) to purchase this asset (Cost: ${cost.toStringAsFixed(2)}).',
+                    ),
+                  ),
+                );
+                return;
+              }
             }
 
             final assetTxId = _uuid.v4().replaceAll('-', '').substring(0, 20);

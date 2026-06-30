@@ -12,6 +12,10 @@ import '../models/recurring_transaction.dart';
 class FirestoreService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
+  String generateId(String collectionName) {
+    return _db.collection(collectionName).doc().id;
+  }
+
   // --- ACCOUNTS ---
   Stream<List<Account>> streamAccounts() {
     return _db.collection('accounts').snapshots().map((snapshot) {

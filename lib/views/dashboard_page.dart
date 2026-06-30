@@ -374,7 +374,10 @@ class _DashboardPageState extends State<DashboardPage> {
           }
         }
         cat ??= Category(id: '', name: 'Miscellaneous', type: 'expense', colorHex: '#9CA3AF', createdAt: DateTime.now());
-        if (cat.type == 'transfer') continue;
+        // CRITICAL: We exclude 'transfer' and 'investment' categories (e.g. Stock Purchase) from monthly living
+        // expense breakdowns because they represent internal capital transfers or asset exchanges rather than
+        // day-to-day living expenses. Including them would heavily distort household budgeting metrics.
+        if (cat.type == 'transfer' || cat.type == 'investment') continue;
         
         final amountInDisplay = service.convertToDisplay(tx.amount.abs(), tx.currency);
         
@@ -773,7 +776,9 @@ class _DashboardPageState extends State<DashboardPage> {
       }
       final cat = service.categories.firstWhere((c) => c.id == tx.categoryId,
           orElse: () => Category(id: '', name: 'Unknown', type: 'expense', createdAt: DateTime.now()));
-      if (cat.type == 'transfer') continue;
+      // CRITICAL: Exclude 'transfer' and 'investment' categories from daily living expenses trends to avoid
+      // skewing household budget metrics with internal transfers or stock/ETF trade execution cash flows.
+      if (cat.type == 'transfer' || cat.type == 'investment') continue;
       
       final amountInDisplay = service.convertToDisplay(tx.amount, tx.currency);
       final day = tx.date.day;

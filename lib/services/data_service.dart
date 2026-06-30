@@ -573,21 +573,25 @@ class DataService extends ChangeNotifier {
 
       // CUSTOMIZATION PREFERENCE: Automatically log a CASH asset transaction for cash ledger transactions in capital accounts
       if (account.accountGroup == 'capital') {
-        final cashAssetTxId = 'cash_asset_' + tx.id;
-        final cashAssetTx = AssetTransaction(
-          id: cashAssetTxId,
-          transactionId: tx.id,
-          accountId: tx.accountId,
-          assetId: 'CASH',
-          type: tx.amount < 0 ? 'sell' : 'buy', // Outflow sells CASH, inflow buys CASH
-          quantity: tx.amount.abs(),
-          unitPrice: 1.0,
-          executedAt: tx.date,
-          assetSymbol: 'CASH',
-          assetName: 'Cash',
-        );
-        await _firestore.saveAssetTransaction(cashAssetTx);
-        await _recalculateHolding(cashAssetTx);
+        // CRITICAL: All primary keys must be a native 20-character Firestore Document ID (alphanumeric, no underscores).
+        final exists = assetTransactions.any((at) => at.transactionId == tx.id && at.assetId == 'CASH');
+        if (!exists) {
+          final cashAssetTxId = _firestore.generateId('asset_transactions');
+          final cashAssetTx = AssetTransaction(
+            id: cashAssetTxId,
+            transactionId: tx.id,
+            accountId: tx.accountId,
+            assetId: 'CASH',
+            type: tx.amount < 0 ? 'sell' : 'buy', // Outflow sells CASH, inflow buys CASH
+            quantity: tx.amount.abs(),
+            unitPrice: 1.0,
+            executedAt: tx.date,
+            assetSymbol: 'CASH',
+            assetName: 'Cash',
+          );
+          await _firestore.saveAssetTransaction(cashAssetTx);
+          await _recalculateHolding(cashAssetTx);
+        }
       }
     }
   }
@@ -615,9 +619,14 @@ class DataService extends ChangeNotifier {
 
       // CUSTOMIZATION PREFERENCE: Automatically delete corresponding CASH asset transaction for capital accounts
       if (account.accountGroup == 'capital') {
-        final cashAssetTxId = 'cash_asset_' + tx.id;
-        await _firestore.deleteAssetTransaction(cashAssetTxId);
-        await recalculateHoldingFromScratch(tx.accountId, 'CASH', excludeTxId: cashAssetTxId);
+        final cashAssetTx = assetTransactions.cast<AssetTransaction?>().firstWhere(
+          (at) => at != null && at.transactionId == tx.id && at.assetId == 'CASH',
+          orElse: () => null,
+        );
+        if (cashAssetTx != null) {
+          await _firestore.deleteAssetTransaction(cashAssetTx.id);
+          await recalculateHoldingFromScratch(tx.accountId, 'CASH', excludeTxId: cashAssetTx.id);
+        }
       }
     }
     // 3. Find and soft-delete any paired transfer transaction
@@ -661,7 +670,7 @@ class DataService extends ChangeNotifier {
 
           // CUSTOMIZATION PREFERENCE: Delete paired CASH asset transaction if destination account is capital
           if (account.accountGroup == 'capital') {
-            final cashAssetTxId = 'cash_asset_' + nonNullPairedTx.id;
+            final cashAssetTxId = 'ca_${nonNullPairedTx.id.substring(3)}';
             await _firestore.deleteAssetTransaction(cashAssetTxId);
             await recalculateHoldingFromScratch(nonNullPairedTx.accountId, 'CASH', excludeTxId: cashAssetTxId);
           }
@@ -737,9 +746,14 @@ class DataService extends ChangeNotifier {
         // CUSTOMIZATION PREFERENCE: Delete corresponding CASH asset transaction
         final account = accounts.cast<Account?>().firstWhere((a) => a?.id == tx.accountId, orElse: () => null);
         if (account != null && account.accountGroup == 'capital') {
-          final cashAssetTxId = 'cash_asset_' + tx.id;
-          await _firestore.deleteAssetTransaction(cashAssetTxId);
-          await recalculateHoldingFromScratch(tx.accountId, 'CASH', excludeTxId: cashAssetTxId);
+          final cashAssetTx = assetTransactions.cast<AssetTransaction?>().firstWhere(
+            (at) => at != null && at.transactionId == tx.id && at.assetId == 'CASH',
+            orElse: () => null,
+          );
+          if (cashAssetTx != null) {
+            await _firestore.deleteAssetTransaction(cashAssetTx.id);
+            await recalculateHoldingFromScratch(tx.accountId, 'CASH', excludeTxId: cashAssetTx.id);
+          }
         }
       }
     }
@@ -776,21 +790,35 @@ class DataService extends ChangeNotifier {
 
         // CUSTOMIZATION PREFERENCE: Create/update corresponding CASH asset transaction
         if (account.accountGroup == 'capital') {
-          final cashAssetTxId = 'cash_asset_' + tx.id;
-          final cashAssetTx = AssetTransaction(
-            id: cashAssetTxId,
-            transactionId: tx.id,
-            accountId: tx.accountId,
-            assetId: 'CASH',
-            type: tx.amount < 0 ? 'sell' : 'buy',
-            quantity: tx.amount.abs(),
-            unitPrice: 1.0,
-            executedAt: tx.date,
-            assetSymbol: 'CASH',
-            assetName: 'Cash',
+          final existingCashAssetTx = assetTransactions.cast<AssetTransaction?>().firstWhere(
+            (at) => at != null && at.transactionId == tx.id && at.assetId == 'CASH',
+            orElse: () => null,
           );
-          await _firestore.saveAssetTransaction(cashAssetTx);
-          await _recalculateHolding(cashAssetTx);
+          if (existingCashAssetTx == null) {
+            final cashAssetTxId = _firestore.generateId('asset_transactions');
+            final cashAssetTx = AssetTransaction(
+              id: cashAssetTxId,
+              transactionId: tx.id,
+              accountId: tx.accountId,
+              assetId: 'CASH',
+              type: tx.amount < 0 ? 'sell' : 'buy',
+              quantity: tx.amount.abs(),
+              unitPrice: 1.0,
+              executedAt: tx.date,
+              assetSymbol: 'CASH',
+              assetName: 'Cash',
+            );
+            await _firestore.saveAssetTransaction(cashAssetTx);
+            await _recalculateHolding(cashAssetTx);
+          } else {
+            final updatedCashAssetTx = existingCashAssetTx.copyWith(
+              type: tx.amount < 0 ? 'sell' : 'buy',
+              quantity: tx.amount.abs(),
+              executedAt: tx.date,
+            );
+            await _firestore.saveAssetTransaction(updatedCashAssetTx);
+            await _recalculateHolding(updatedCashAssetTx);
+          }
         }
       }
     }
@@ -834,7 +862,8 @@ class DataService extends ChangeNotifier {
           );
         }
 
-        final cashTxId = 'cash_${assetTx.id}';
+        // CRITICAL: ID must be a native 20-character Firestore Document ID (alphanumeric, no underscores).
+        final cashTxId = _firestore.generateId('transactions');
         final cashTx = Transaction(
           id: cashTxId,
           accountId: assetTx.accountId,
@@ -1391,14 +1420,16 @@ class DataService extends ChangeNotifier {
           await recalculateHoldingFromScratch(tx.accountId, 'CASH');
         }
       }
-      // CUSTOMIZATION PREFERENCE: Make sure the CASH asset type is registered in the database
+      // CUSTOMIZATION PREFERENCE: Make sure the CASH asset type is registered in the database.
+      // CRITICAL: The asset type must be set to 'stock' because the Supabase check constraint 
+      // ('assets_type_check') only permits 'stock', 'etf', or 'crypto'. Type 'cash' will fail replication.
       final cashAssetExists = assets.any((a) => a.id == 'CASH');
       if (!cashAssetExists) {
         await _firestore.saveAsset(Asset(
           id: 'CASH',
           symbol: 'CASH',
           name: 'Cash',
-          type: 'cash',
+          type: 'stock',
         ));
       }
 
@@ -1407,9 +1438,9 @@ class DataService extends ChangeNotifier {
         if (tx.status == 'deleted') continue;
         final account = accounts.cast<Account?>().firstWhere((a) => a?.id == tx.accountId, orElse: () => null);
         if (account != null && account.accountGroup == 'capital') {
-          final cashAssetTxId = 'cash_asset_' + tx.id;
-          final exists = assetTransactions.any((at) => at.id == cashAssetTxId);
+          final exists = assetTransactions.any((at) => at.transactionId == tx.id && at.assetId == 'CASH');
           if (!exists) {
+            final cashAssetTxId = _firestore.generateId('asset_transactions');
             final cashAssetTx = AssetTransaction(
               id: cashAssetTxId,
               transactionId: tx.id,
@@ -1480,7 +1511,7 @@ class DataService extends ChangeNotifier {
               );
             }
 
-            final cashTxId = 'cash_' + tx.id;
+            final cashTxId = _firestore.generateId('transactions');
             final cashTx = Transaction(
               id: cashTxId,
               accountId: tx.accountId,
