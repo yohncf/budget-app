@@ -388,6 +388,57 @@ class DataService extends ChangeNotifier {
             continue;
           }
 
+          // CRITICAL: Clean up and filter records before sending to Supabase to prevent:
+          // 1. varchar(20) constraint failures due to obsolete/deleted long IDs in the local offline cache.
+          // 2. duplicate key conflicts on unique indexes (such as holdings account_id/asset_id constraint).
+          var finalRecords = records.where((r) {
+            final id = r['id']?.toString() ?? '';
+            if (id.length > 20) return false;
+            
+            final accountId = r['account_id']?.toString() ?? '';
+            if (accountId.length > 20) return false;
+            
+            final categoryId = r['category_id']?.toString() ?? '';
+            if (categoryId.length > 20) return false;
+            
+            final transactionId = r['transaction_id']?.toString() ?? '';
+            if (transactionId.length > 20) return false;
+            
+            final assetId = r['asset_id']?.toString() ?? '';
+            if (assetId.length > 20) return false;
+            
+            final recurringId = r['recurring_id']?.toString() ?? '';
+            if (recurringId.length > 20) return false;
+            
+            return true;
+          }).toList();
+
+          if (collection == 'holdings') {
+            final Map<String, Map<String, dynamic>> uniqueHoldings = {};
+            for (final h in finalRecords) {
+              final accountId = h['account_id']?.toString() ?? '';
+              final assetId = h['asset_id']?.toString() ?? '';
+              final key = '${accountId}_${assetId}';
+              
+              final existing = uniqueHoldings[key];
+              if (existing == null) {
+                uniqueHoldings[key] = h;
+              } else {
+                final existingUpdated = DateTime.tryParse(existing['updated_at']?.toString() ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
+                final currentUpdated = DateTime.tryParse(h['updated_at']?.toString() ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
+                if (currentUpdated.isAfter(existingUpdated)) {
+                  uniqueHoldings[key] = h;
+                }
+              }
+            }
+            finalRecords = uniqueHoldings.values.toList();
+          }
+
+          if (finalRecords.isEmpty) {
+            debugPrint("Backup: Collection $collection is empty after filtering. Skipping.");
+            continue;
+          }
+
           // Upsert to Supabase using REST API with service_role key to bypass RLS
           final url = Uri.parse('https://$projectRef.supabase.co/rest/v1/$collection');
           final response = await http.post(
@@ -398,7 +449,7 @@ class DataService extends ChangeNotifier {
               'Prefer': 'resolution=merge-duplicates',
               'Content-Type': 'application/json',
             },
-            body: json.encode(records),
+            body: json.encode(finalRecords),
           );
 
           if (response.statusCode >= 200 && response.statusCode < 300) {
