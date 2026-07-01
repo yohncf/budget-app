@@ -721,9 +721,16 @@ class DataService extends ChangeNotifier {
 
           // CUSTOMIZATION PREFERENCE: Delete paired CASH asset transaction if destination account is capital
           if (account.accountGroup == 'capital') {
-            final cashAssetTxId = 'ca_${nonNullPairedTx.id.substring(3)}';
-            await _firestore.deleteAssetTransaction(cashAssetTxId);
-            await recalculateHoldingFromScratch(nonNullPairedTx.accountId, 'CASH', excludeTxId: cashAssetTxId);
+            // CRITICAL: Do not attempt to guess or construct the ID using prefixes (e.g. 'ca_').
+            // All database IDs must remain clean 20-character Firestore alphanumeric strings to avoid constraint violations.
+            final cashAssetTx = assetTransactions.cast<AssetTransaction?>().firstWhere(
+              (at) => at != null && at.transactionId == nonNullPairedTx.id && at.assetId == 'CASH',
+              orElse: () => null,
+            );
+            if (cashAssetTx != null) {
+              await _firestore.deleteAssetTransaction(cashAssetTx.id);
+              await recalculateHoldingFromScratch(nonNullPairedTx.accountId, 'CASH', excludeTxId: cashAssetTx.id);
+            }
           }
         }
       }
@@ -1023,8 +1030,10 @@ class DataService extends ChangeNotifier {
         await _firestore.saveHolding(updatedHolding);
       }
     } else if (qty > 0) {
+      // CRITICAL: Do not use UniqueKey().toString(). All database IDs must be clean 20-character
+      // alphanumeric strings generated via Firestore to conform to the Supabase varchar(20) schema limits.
       final newHolding = Holding(
-        id: UniqueKey().toString(),
+        id: _firestore.generateId('holdings'),
         accountId: accountId,
         assetId: assetId,
         quantity: qty,
@@ -1040,7 +1049,8 @@ class DataService extends ChangeNotifier {
     
     double currentQty = 0;
     double currentAvgPrice = 0;
-    String id = UniqueKey().toString();
+    // CRITICAL: Do not use UniqueKey().toString(). IDs must be clean 20-character alphanumeric strings.
+    String id = _firestore.generateId('holdings');
 
     if (existingHoldings.isNotEmpty) {
       final h = existingHoldings.first;
