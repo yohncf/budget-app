@@ -310,6 +310,12 @@ class _LedgerPageState extends State<LedgerPage> {
                           if (tx.status == 'deleted' && !_showDeleted) {
                             return false;
                           }
+
+                          // Exclude capital account transactions from the main ledger
+                          final account = dataService.accounts.cast<Account?>().firstWhere((a) => a?.id == tx.accountId, orElse: () => null);
+                          if (account != null && account.accountGroup == 'capital') {
+                            return false;
+                          }
                           
                           final cat = dataService.categories.firstWhere(
                             (c) => c.id == tx.categoryId,

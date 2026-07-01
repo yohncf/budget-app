@@ -895,9 +895,35 @@ class DataService extends ChangeNotifier {
       if (accountIndex != -1) {
         final account = accounts[accountIndex];
 
-        // CRITICAL: When selling Cash in a "Capital" account, that should not be recorded on the transactions table, only in asset transactions.
-        if (account.accountGroup == 'capital' && assetTx.assetId == 'CASH' && assetTx.type == 'sell') {
-          // Skip logging in the transactions table
+        if (account.accountGroup == 'capital') {
+          // Directly create and save the CASH asset transaction without logging to the transactions table
+          final totalValue = assetTx.quantity * assetTx.unitPrice;
+          final cashAssetTxId = _firestore.generateId('asset_transactions');
+          final cashAssetTx = AssetTransaction(
+            id: cashAssetTxId,
+            transactionId: null, // No ledger transaction linked
+            accountId: assetTx.accountId,
+            assetId: 'CASH',
+            type: assetTx.type == 'buy' ? 'sell' : 'buy', // Buying stock sells CASH, selling stock buys CASH
+            quantity: totalValue,
+            unitPrice: 1.0,
+            executedAt: assetTx.executedAt,
+            assetSymbol: 'CASH',
+            assetName: 'Cash',
+          );
+          await _firestore.saveAssetTransaction(cashAssetTx);
+          await _recalculateHolding(cashAssetTx);
+
+          // Update the account's cash balance directly
+          if (_shouldUpdateBalance(account.id, assetTx.executedAt)) {
+            final double amount = assetTx.type == 'buy' ? -totalValue : totalValue;
+            final updatedAccount = account.copyWith(
+              currentBalance: account.currentBalance + amount,
+              updatedAt: DateTime.now(),
+            );
+            await _firestore.saveAccount(updatedAccount);
+            accounts[accountIndex] = updatedAccount;
+          }
         } else {
           final totalValue = assetTx.quantity * assetTx.unitPrice;
           final amount = assetTx.type == 'buy' ? -totalValue : totalValue;
