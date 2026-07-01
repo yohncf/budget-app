@@ -891,50 +891,56 @@ class DataService extends ChangeNotifier {
       final accountIndex = accounts.indexWhere((a) => a.id == assetTx.accountId);
       if (accountIndex != -1) {
         final account = accounts[accountIndex];
-        final totalValue = assetTx.quantity * assetTx.unitPrice;
-        final amount = assetTx.type == 'buy' ? -totalValue : totalValue;
 
-        Category matchedCategory;
-        if (assetTx.type == 'buy') {
-          matchedCategory = categories.firstWhere(
-            (c) => c.type == 'investment' || c.type == 'expense',
-            orElse: () => Category(
-              id: 'investment_default',
-              name: 'Investment',
-              type: 'investment',
-              createdAt: DateTime.now(),
-            ),
-          );
+        // CRITICAL: When selling Cash in a "Capital" account, that should not be recorded on the transactions table, only in asset transactions.
+        if (account.accountGroup == 'capital' && assetTx.assetId == 'CASH' && assetTx.type == 'sell') {
+          // Skip logging in the transactions table
         } else {
-          matchedCategory = categories.firstWhere(
-            (c) => c.type == 'income' && c.name.toLowerCase().contains('deposit'),
-            orElse: () => categories.firstWhere(
-              (c) => c.type == 'income',
+          final totalValue = assetTx.quantity * assetTx.unitPrice;
+          final amount = assetTx.type == 'buy' ? -totalValue : totalValue;
+
+          Category matchedCategory;
+          if (assetTx.type == 'buy') {
+            matchedCategory = categories.firstWhere(
+              (c) => c.type == 'investment' || c.type == 'expense',
               orElse: () => Category(
-                id: 'deposit_default',
-                name: 'Deposit',
-                type: 'income',
+                id: 'investment_default',
+                name: 'Investment',
+                type: 'investment',
                 createdAt: DateTime.now(),
               ),
-            ),
+            );
+          } else {
+            matchedCategory = categories.firstWhere(
+              (c) => c.type == 'income' && c.name.toLowerCase().contains('deposit'),
+              orElse: () => categories.firstWhere(
+                (c) => c.type == 'income',
+                orElse: () => Category(
+                  id: 'deposit_default',
+                  name: 'Deposit',
+                  type: 'income',
+                  createdAt: DateTime.now(),
+                ),
+              ),
+            );
+          }
+
+          // CRITICAL: ID must be a native 20-character Firestore Document ID (alphanumeric, no underscores).
+          final cashTxId = _firestore.generateId('transactions');
+          final cashTx = Transaction(
+            id: cashTxId,
+            accountId: assetTx.accountId,
+            categoryId: matchedCategory.id,
+            amount: amount,
+            currency: account.currency,
+            date: assetTx.executedAt,
+            description: '${assetTx.type.toUpperCase()} ${assetTx.quantity} ${assetTx.assetSymbol ?? assetTx.assetId} @ ${assetTx.unitPrice}',
+            createdAt: DateTime.now(),
           );
+
+          await addTransaction(cashTx);
+          finalAssetTx = assetTx.copyWith(transactionId: cashTxId);
         }
-
-        // CRITICAL: ID must be a native 20-character Firestore Document ID (alphanumeric, no underscores).
-        final cashTxId = _firestore.generateId('transactions');
-        final cashTx = Transaction(
-          id: cashTxId,
-          accountId: assetTx.accountId,
-          categoryId: matchedCategory.id,
-          amount: amount,
-          currency: account.currency,
-          date: assetTx.executedAt,
-          description: '${assetTx.type.toUpperCase()} ${assetTx.quantity} ${assetTx.assetSymbol ?? assetTx.assetId} @ ${assetTx.unitPrice}',
-          createdAt: DateTime.now(),
-        );
-
-        await addTransaction(cashTx);
-        finalAssetTx = assetTx.copyWith(transactionId: cashTxId);
       }
     }
 
