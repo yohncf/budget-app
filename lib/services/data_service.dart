@@ -21,6 +21,7 @@ class DataService extends ChangeNotifier {
   List<Account> accounts = [];
   List<AccountSnapshot> snapshots = [];
   List<Category> categories = [];
+  List<Transaction> allTransactions = [];
   List<Transaction> transactions = [];
   List<Holding> holdings = [];
   List<AssetTransaction> assetTransactions = [];
@@ -54,12 +55,8 @@ class DataService extends ChangeNotifier {
 
   void setTransactionFilterDate(DateTime date) {
     transactionFilterDate = date;
-    _transactionsSubscription?.cancel();
-    _transactionsSubscription = _firestore.streamTransactions(startFrom: transactionFilterDate).listen((data) {
-      transactions = data;
-      notifyListeners();
-      _healDatabaseRecordsOnce();
-    });
+    transactions = allTransactions.where((t) => !t.date.isBefore(transactionFilterDate)).toList();
+    notifyListeners();
   }
 
   List<String> enabledCurrencies = ['MXN', 'USD', 'SOL'];
@@ -514,7 +511,13 @@ class DataService extends ChangeNotifier {
     });
 
     transactionFilterDate = DateTime(DateTime.now().year, DateTime.now().month, 1);
-    setTransactionFilterDate(transactionFilterDate);
+    _transactionsSubscription?.cancel();
+    _transactionsSubscription = _firestore.streamTransactions().listen((data) {
+      allTransactions = data;
+      transactions = allTransactions.where((t) => !t.date.isBefore(transactionFilterDate)).toList();
+      notifyListeners();
+      _healDatabaseRecordsOnce();
+    });
 
     _firestore.streamHoldings().listen((data) {
       holdings = data;
@@ -691,7 +694,7 @@ class DataService extends ChangeNotifier {
 
     if (transferTag != null) {
       Transaction? pairedTx;
-      for (final t in transactions) {
+      for (final t in allTransactions) {
         if (t.id != tx.id && t.tags.contains(transferTag) && t.status != 'deleted') {
           pairedTx = t;
           break;
@@ -751,7 +754,7 @@ class DataService extends ChangeNotifier {
     }
     if (transferTag != null) {
       Transaction? pairedTx;
-      for (final t in transactions) {
+      for (final t in allTransactions) {
         if (t.id != tx.id && t.tags.contains(transferTag) && t.status != 'deleted') {
           pairedTx = t;
           break;
@@ -966,10 +969,7 @@ class DataService extends ChangeNotifier {
 
     // CUSTOMIZATION PREFERENCE: Delete corresponding cash ledger transaction (which deletes CASH asset transaction)
     if (assetTx.transactionId != null) {
-      Transaction? cashTx = transactions.cast<Transaction?>().firstWhere((t) => t?.id == assetTx.transactionId, orElse: () => null);
-      if (cashTx == null) {
-        cashTx = await _firestore.getTransaction(assetTx.transactionId!);
-      }
+      final cashTx = allTransactions.cast<Transaction?>().firstWhere((t) => t?.id == assetTx.transactionId, orElse: () => null);
       if (cashTx != null) {
         await deleteTransaction(cashTx);
       }
@@ -1421,7 +1421,7 @@ class DataService extends ChangeNotifier {
   // CUSTOMIZATION PREFERENCE: Self-healing routine to fix incorrect assetId records and missing cash operations
   Future<void> _healDatabaseRecordsOnce() async {
     if (_hasHealedV5) return;
-    if (accounts.isEmpty || categories.isEmpty || assets.isEmpty || assetTransactions.isEmpty || transactions.isEmpty) return;
+    if (accounts.isEmpty || categories.isEmpty || assets.isEmpty || assetTransactions.isEmpty || allTransactions.isEmpty) return;
     _hasHealedV5 = true;
 
     try {
@@ -1433,7 +1433,7 @@ class DataService extends ChangeNotifier {
         debugPrint('Found bad recurring transaction ID: ${badRt.id}. Migrating to $newRtId...');
 
         // 1. Update any transactions referencing this recurring ID
-        for (final tx in transactions) {
+        for (final tx in allTransactions) {
           if (tx.recurringId == badRt.id) {
             final correctedTx = tx.copyWith(recurringId: newRtId);
             await _firestore.saveTransaction(correctedTx);
@@ -1504,7 +1504,7 @@ class DataService extends ChangeNotifier {
       }
 
       // CUSTOMIZATION PREFERENCE: Generate any missing CASH asset transactions for legacy capital account cash flows
-      for (final tx in transactions) {
+      for (final tx in allTransactions) {
         if (tx.status == 'deleted') continue;
         final account = accounts.cast<Account?>().firstWhere((a) => a?.id == tx.accountId, orElse: () => null);
         if (account != null && account.accountGroup == 'capital') {
@@ -1625,18 +1625,14 @@ class DataService extends ChangeNotifier {
 
       final sales = assetTransactions.where((at) => at.type == 'sell' && at.transactionId != null).toList();
       for (final sale in sales) {
-        final matchingCashTxIndex = transactions.indexWhere((t) => t.id == sale.transactionId);
-        Transaction? cashTx;
+        final matchingCashTxIndex = allTransactions.indexWhere((t) => t.id == sale.transactionId);
         if (matchingCashTxIndex != -1) {
-          cashTx = transactions[matchingCashTxIndex];
-        } else {
-          cashTx = await _firestore.getTransaction(sale.transactionId!);
-        }
-
-        if (cashTx != null && cashTx.categoryId != depositCategory.id) {
-          final correctedCashTx = cashTx.copyWith(categoryId: depositCategory.id);
-          await _firestore.saveTransaction(correctedCashTx);
-          debugPrint('Healed cash transaction ${cashTx.id} category from ${cashTx.categoryId} to ${depositCategory.id}');
+          final cashTx = allTransactions[matchingCashTxIndex];
+          if (cashTx.categoryId != depositCategory.id) {
+            final correctedCashTx = cashTx.copyWith(categoryId: depositCategory.id);
+            await _firestore.saveTransaction(correctedCashTx);
+            debugPrint('Healed cash transaction ${cashTx.id} category from ${cashTx.categoryId} to ${depositCategory.id}');
+          }
         }
       }
     } catch (e) {
