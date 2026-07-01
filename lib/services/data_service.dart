@@ -966,7 +966,10 @@ class DataService extends ChangeNotifier {
 
     // CUSTOMIZATION PREFERENCE: Delete corresponding cash ledger transaction (which deletes CASH asset transaction)
     if (assetTx.transactionId != null) {
-      final cashTx = transactions.cast<Transaction?>().firstWhere((t) => t?.id == assetTx.transactionId, orElse: () => null);
+      Transaction? cashTx = transactions.cast<Transaction?>().firstWhere((t) => t?.id == assetTx.transactionId, orElse: () => null);
+      if (cashTx == null) {
+        cashTx = await _firestore.getTransaction(assetTx.transactionId!);
+      }
       if (cashTx != null) {
         await deleteTransaction(cashTx);
       }
